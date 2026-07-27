@@ -36,6 +36,19 @@ test('files 목록이 배포에 필요한 경로를 모두 담는다', () => {
 	}
 });
 
+test('부트스트랩이 읽는 원본이 모두 존재하고 files에 포함된다', () => {
+	// 회귀: v0.1.0은 files에 docs가 없어 배포본에 pipeline-design/workflow-example이 빠졌고,
+	// install.js가 존재 검사로 조용히 건너뛰어 문서 2개가 누락된 채 "완료"로 끝났다.
+	// 실설치 스모크 테스트로만 드러났던 결함이라 여기서 고정한다.
+	const { PACKAGE_SOURCES } = require(path.join(ROOT, 'scripts', 'install.js'));
+	const files = read('package.json').files;
+	for (const source of PACKAGE_SOURCES) {
+		assert.ok(fs.existsSync(path.join(ROOT, source)), `부트스트랩 원본이 없다: ${source}`);
+		const covered = files.some((entry) => source === entry || source.startsWith(entry.replace(/\/$/, '') + '/'));
+		assert.ok(covered, `${source}가 files에 포함되지 않아 배포본에서 빠진다`);
+	}
+});
+
 test('대상 저장소용 스니펫이 참조하는 실행 파일은 bin에 선언되어 있다', () => {
 	const pkg = read('package.json');
 	const snippet = read('templates', 'package-json-snippet.json');

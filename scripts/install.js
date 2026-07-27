@@ -31,6 +31,19 @@ const LEGACY_SCRIPTS = {
 // 대상에는 필요 없다. 사용자 파일을 말없이 지우지 않고 알리기만 한다.
 const OBSOLETE_SCRIPTS = ['task:test', 'handoff:test'];
 
+// 부트스트랩이 배포본에서 읽는 원본들(패키지 루트 기준). package.json의 files가 이 경로를
+// 전부 포함해야 하며, scripts/test/package-meta.test.js가 그것을 강제한다.
+// v0.1.0에서 files에 docs가 빠져 문서 2개가 배포본에 없었고, 설치는 그대로 "완료"로 끝났다.
+const PACKAGE_SOURCES = [
+  'templates/TASK.template.md',
+  'templates/task-lint.yml',
+  'templates/gitignore-snippet.txt',
+  'templates/package-json-snippet.json',
+  'templates/collaboration-protocol.md',
+  'docs/pipeline-design.md',
+  'docs/pipeline-workflow-example.md'
+];
+
 function parseArgs(argv) {
   const opts = { target: process.cwd(), handoff: true };
   for (let i = 0; i < argv.length; i += 1) {
@@ -151,8 +164,12 @@ function main() {
 
   // 5. 규약·설계·예시 문서
   ensureFileFromTemplate(path.join(TEMPLATES, 'collaboration-protocol.md'), path.join(TARGET_ROOT, 'docs', 'duetcode-collaboration-protocol.md'));
+  // 원본이 없으면 조용히 건너뛰지 않는다. 예전에는 존재 검사로 넘겨서, package.json의 files에
+  // docs가 빠진 배포본이 문서 2개를 말없이 누락한 채 "완료"로 끝났다(v0.1.0에서 실제 발생).
   for (const [src, dest] of [['pipeline-design.md', 'duetcode-pipeline-design.md'], ['pipeline-workflow-example.md', 'duetcode-pipeline-workflow-example.md']]) {
-    if (fs.existsSync(path.join(DOCS, src))) ensureFileFromTemplate(path.join(DOCS, src), path.join(TARGET_ROOT, 'docs', dest));
+    const source = path.join(DOCS, src);
+    if (!fs.existsSync(source)) throw new Error(`배포본에 문서가 없습니다: docs/${src} (package.json files 확인 필요)`);
+    ensureFileFromTemplate(source, path.join(TARGET_ROOT, 'docs', dest));
   }
 
   // 요약
@@ -183,4 +200,4 @@ if (require.main === module) {
   try { main(); } catch (e) { console.error('duet-init: ' + e.message); process.exitCode = 1; }
 }
 
-module.exports = { parseArgs, LEGACY_SCRIPTS, OBSOLETE_SCRIPTS };
+module.exports = { parseArgs, LEGACY_SCRIPTS, OBSOLETE_SCRIPTS, PACKAGE_SOURCES };
