@@ -17,6 +17,24 @@
 
 탐지 패턴: 자격증명(`password`/`token`/`api_key`/`secret`/PEM/`ghp_`/`github_pat_`), 사설 IP 대역, 개인 이메일, 설치 대상 저장소·고객사 고유명, DB 스키마명, 로컬 절대경로.
 
+### 1.1 재스캔 — 엔진 외부화 이후(push 직전)
+
+최초 검토는 18커밋 시점이었다. 그 뒤 7커밋(설치본 업그레이드 수정 → 엔진 외부화 → 문서 정합성 → 검증 증거)이 쌓였으므로, **public push는 되돌릴 수 없으니** `e53438a..HEAD` 구간을 같은 패턴으로 다시 훑었다.
+
+| 항목 | 결과 |
+|---|---|
+| 실제 키 형식(`sk-`/`gh[pousr]_`/`xox`/`AKIA`/`AIza`/JWT) | 0건 |
+| PEM 블록 | 0건 |
+| 사설 IP | 0건 |
+| 이메일 | `noreply@anthropic.com`, `sdcomms4227@users.noreply.github.com` — 둘 다 의도된 noreply |
+| 로컬 절대경로 | 0건 |
+| 고객사·대상 고유명 | 0건 |
+| `cc-symphony` | 4건 — 전부 **기존 문서의 문맥 줄**이며 새로 추가된 줄에는 0건(§4 이관 안내용) |
+| `credentials`/`password` 매칭 | `templates/verify.example.json`의 **환경변수 이름**뿐(`VERIFY_PASSWORD` 등). 값 아님 |
+| `package-lock.json` | 패키지는 `yaml` 하나, resolved 호스트는 `registry.npmjs.org`뿐. 인증 토큰 없음 |
+
+**결론 불변: 차단 요소 없음.** 새로 추가된 9개 파일(테스트 러너·러너 계약 테스트·`package.json`/lock·`package-meta.test.js`·`verify.example.json`)은 전부 엔진·테스트·설정이며 비밀값을 담지 않는다.
+
 ## 2. 결론
 
 **공개 전환에 보안상 차단 요소는 없다.**
