@@ -132,7 +132,10 @@
 - [x] semver 정책 선언(§5-2)
 - [x] `git config user.email` noreply 설정(§4) — 커밋 author가 이미 noreply 주소다
 - [x] [engine-externalization.md](engine-externalization.md) §3·§4 구현 — 게시 전에 완료(breaking 변경이라 대상이 1곳일 때 처리)
-- [ ] **신규 public 저장소 `duetcode` 생성 + 초기 커밋**
-- [ ] Secret scanning + push protection 활성화(§5-3)
-- [ ] 구 `cc-symphony` 저장소 archive + 이관 안내(§4)
-- [ ] 게시 후 `v0.1.0` 태그 — 대상의 `github:` 스펙이 이 태그를 해석한다
+- [x] **신규 public 저장소 `duetcode` 생성 + 초기 커밋**
+- [x] Secret scanning + push protection(§5-3) — public 저장소 기본 활성이라 별도 조치 불필요. 첫 push가 GH013으로 막힌 것이 그 증거이며, 대응은 [release-checklist.md §1](release-checklist.md)에 기록
+- [x] 구 `cc-symphony` 저장소 archive + 이관 안내(§4)
+- [x] 릴리스 태그 — `v0.1.0` 게시 후 배포본 문서 누락이 발견되어 **`v0.1.1`이 최신**이다. 대상의 `github:` 스펙은 `#v0.1.1`을 가리킨다
+- [x] 실설치 스모크 테스트 — 태그 해석·부트스트랩·`duet-task --version`·lint 확인
+
+**전환 완료.** 이 문서는 이제 사전 검토 계획이 아니라 **수행 기록**이다.

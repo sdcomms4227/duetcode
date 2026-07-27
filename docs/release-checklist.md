@@ -5,25 +5,22 @@
 >
 > 관련 문서: 보안 검토는 [public-release-readiness.md](public-release-readiness.md), 다음 리팩터링 계획은 [engine-externalization.md](engine-externalization.md).
 
-## 1. 지금 당장 해야 할 것 (순서 중요)
+## 1. 게시 — **완료**
 
-아직 **로컬 커밋까지만** 되어 있다. GitHub에는 아무것도 올라가지 않았다.
+`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.1.1`**.
 
-```bash
-cd C:\Project\duetcode
+- [x] author 이메일 noreply 확인
+- [x] public 저장소 생성 + push
+- [x] Secret scanning — **기본 활성이었다**. public 저장소는 켤 필요가 없었고, 아래 push 차단이 그 증거다
+- [x] Push protection — 동일하게 기본 활성
+- [x] 구 `cc-symphony` archive(§4)
+- [x] 실설치 스모크 테스트 — `github:sdcomms4227/duetcode#v0.1.1`
 
-# 1) author 이메일 확인 — 이미 설정되어 있어야 한다
-git config user.email        # → sdcomms4227@users.noreply.github.com
+> **`gh` 활성 계정 주의.** 이 머신에는 `sdcomms4227`과 `mwlee-showtech`가 함께 로그인되어 있고, 작업 중 **활성 계정이 두 번 후자로 되돌아갔다**(두 번째는 push가 403). remote URL에 사용자를 박아 두었지만(`https://sdcomms4227@github.com/...`), push 전에 `gh auth status`로 확인하는 편이 안전하다.
 
-# 2) public 저장소 생성 + push
-gh repo create duetcode --public --source . --push
-```
+### 켜지 않기로 한 것
 
-push 직후 **웹 UI에서** 처리해야 하는 것(CLI로 안 되는 항목):
-
-- [ ] Settings → Code security → **Secret scanning** 활성화
-- [ ] 같은 화면 → **Push protection** 활성화
-- [ ] 구 `cc-symphony` 저장소 → Settings → **Archive**(삭제 금지, 아래 §4 참조)
+`secret_scanning_non_provider_patterns`는 **일부러 끈 채로 둔다.** 이 저장소는 `redactText`가 가려낼 패턴을 총망라한 픽스처 덩어리라(`alpha-secret`, `s3cret`, `password=` 등), 켜면 오탐이 상시 발생한다. 그건 아래에서 경계하는 **경보 둔감화**를 그대로 만든다.
 
 ### 시크릿 스캐너 오탐 대응 방침 — **실제로 발생했고, 방침대로 처리했다**
 
