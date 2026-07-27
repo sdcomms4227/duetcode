@@ -59,7 +59,7 @@ node tools/task/index.js set status=DONE
 
 State machine `IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE`, human gates, and verification rules: see the `pipeline` skill / [docs/pipeline-design.md](docs/pipeline-design.md) / [docs/pipeline-workflow-example.md](docs/pipeline-workflow-example.md).
 
-Proposal (not yet implemented) to make the engine location-independent so target repos can gitignore `tools/`: [docs/engine-externalization.md](docs/engine-externalization.md). Security review for taking this repo public: [docs/public-release-readiness.md](docs/public-release-readiness.md).
+Proposal (not yet implemented) to make the engine location-independent so target repos can gitignore `tools/`: [docs/engine-externalization.md](docs/engine-externalization.md). Security review for the public release: [docs/public-release-readiness.md](docs/public-release-readiness.md). Naming rationale, remaining release steps, and migration notes for repos installed from the previous name: [docs/release-checklist.md](docs/release-checklist.md).
 
 ## Layout
 
