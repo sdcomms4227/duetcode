@@ -83,7 +83,8 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 
 ## 5. verification 블록 · DONE 게이트
 
-- 필드: `status`(PASSED|FAILED|PARTIAL|null), `failedCount`(int), `partialApproved`(bool), `approvedBy`(str|null), `approvedAt`(ISO|null), `updated`(ISO|null).
+- 필드: `status`(PASSED|FAILED|PARTIAL|null), `failedCount`(int), `partialApproved`(bool), `approvedBy`(str|null), `approvedAt`(ISO|null), `updated`(ISO|null), `evidence`(객체|null).
+- **`evidence`(선택)**: `task record-verification --evidence "<명령>"`을 주면 그 명령을 **실제로 실행**해 `{command, exitCode, outputSha256, at}`을 남긴다. 문자열만 받아 적으면 "테스트를 돌렸다"는 자기 신고에 지나지 않기 때문이다. lint는 **`PASSED`인데 `exitCode ≠ 0`인 모순을 거부**한다. 구버전 `TASK.md` 호환을 위해 필드 자체는 선택이다.
 - **쓰기 경로 제한**: `verification.*`는 `task set`으로 직접 수정 불가. 경로는 3개뿐 — `task record-verification`(수동 기록), `task verify`(자동 하니스, Tier 2), `task approve-partial`(승인 3필드).
 - `task record-verification --status <S> --failed-count <N>`: **REVIEW에서만 허용**, 승인 3필드 항상 초기화.
 - `task approve-partial`: `stdin.isTTY && stdout.isTTY`를 검사해 **비대화형 실행 거부**. TTY 검사는 자동 실행 방지 장치일 뿐 사람 신원 보증이 아니다.

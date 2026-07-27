@@ -44,7 +44,7 @@ In a target repo the state machine is driven via `duet-task <command>`, aliased 
 
 ### Single source of truth: `TASK.md`
 
-The entire pipeline pivots on one file, `TASK.md`, in the *target* repo: YAML front matter is the machine-readable state, prose below it is human detail. Only one Active Task exists at a time. `engine/task/lib.js` parses it with a strict `---\n...\n---` front-matter regex (`parseSource`) and rewrites it losslessly via `yaml`'s `parseDocument`/`toString` (preserves comments/formatting).
+The entire pipeline pivots on one file, `TASK.md`, in the *target* repo: YAML front matter is the machine-readable state, prose below it is human detail. Only one Active Task exists at a time. `engine/task/lib.js` parses it with a strict `---\n...\n---` front-matter regex (`parseSource`) and rewrites it losslessly via `yaml`'s `parseDocument`/`toString` (preserves comments/formatting). `save()` writes to a temp file and renames — a half-written `TASK.md` would block `lint`, `show`, and every handoff at once.
 
 ### State machine (`engine/task/lib.js` + `index.js`)
 
@@ -57,6 +57,7 @@ States: `IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE`, plus t
 - `highRisk: true` requires the literal substring `Opus` in `roles.designer` (and in `roles.reviewer` from `READY` onward). Note what is actually enforced: a string in a field, plus the presence of `--high-risk-approved` at dispatch. Neither proves a human approved or that any particular model ran — it is a speed bump that makes bypassing the gate a deliberate act, not evidence the gate was honored.
 - Reaching `READY`+ requires specific `### ` sections in the prose body to be non-placeholder (`meaningful()` rejects `없음`/`미정`/`TODO`/`-`). `REVIEW`+ additionally requires the `다음 담당자` / `다음 행동` bullets under `### Review와 다음 행동` to carry real values (`labelled()`).
 - `DONE` requires `verification.status === 'PASSED'` (or `PARTIAL` with `partialApproved === true`) and `failedCount === 0` (`canDone()`).
+- `verification.evidence` is optional (older `TASK.md` files predate it), but when present it must be well-formed **and consistent**: a `PASSED` status with a non-zero `evidence.exitCode` is rejected. `record-verification --evidence "<cmd>"` runs the command and records `{command, exitCode, outputSha256, at}` — recording the string alone would just be self-reporting.
 - `reset` from a terminal state requires the TASK.md file itself to be committed clean (`requireCleanShare`). `CANCELLED`/`SUPERSEDED` may skip that when `closure.archiveRef` is set; `DONE` never may, because `archive` refuses any state but those two (`verifyArchiveRef`). This is what stops silent loss of a closed task's record.
 
 `start` replaces the prose body with `STARTER_BODY`, a placeholder skeleton — this is deliberate, so a new task can never inherit a stale previous task's write-up (see the code comment in `lib.js` referencing the past defect this fixed).

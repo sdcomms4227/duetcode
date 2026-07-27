@@ -64,9 +64,27 @@ function main(args = process.argv.slice(2)) {
     set(model, 'status', 'IDLE');
   } else if (command === 'record-verification') {
     if (get(model, 'status') !== 'REVIEW') fail('record-verification은 REVIEW에서만 허용됩니다.');
-    const status = required(option(args, '--status'), 'task record-verification --status <S> --failed-count <N>'); const count = Number(required(option(args, '--failed-count'), 'task record-verification --status <S> --failed-count <N>'));
+    const usage = 'task record-verification --status <S> --failed-count <N> [--evidence "<검증 명령>"]';
+    const status = required(option(args, '--status'), usage); const count = Number(required(option(args, '--failed-count'), usage));
     if (!['PASSED', 'FAILED', 'PARTIAL'].includes(status) || !Number.isInteger(count) || count < 0) fail('검증 결과 인자가 유효하지 않습니다.');
-    set(model, 'verification', { status, failedCount: count, partialApproved: false, approvedBy: null, approvedAt: null, updated: now() });
+    // --evidence <명령>: 그 명령을 실제로 실행해 exit code와 출력 해시를 남긴다. 문자열만 받아 적으면
+    // "테스트를 돌렸다"는 자기 신고에 지나지 않으므로, 무엇을 근거로 PASSED인지가 기록되지 않는다.
+    const evidenceCommand = option(args, '--evidence');
+    let evidence = null;
+    if (evidenceCommand != null) {
+      if (!evidenceCommand.trim()) fail('--evidence에는 실행할 명령이 필요합니다.');
+      const run = require('node:child_process').spawnSync(evidenceCommand, { shell: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+      if (run.error) fail(`증거 명령을 실행하지 못했습니다: ${run.error.message}`);
+      const output = `${run.stdout || ''}${run.stderr || ''}`;
+      process.stdout.write(output);
+      evidence = {
+        command: evidenceCommand,
+        exitCode: run.status ?? -1,
+        outputSha256: require('node:crypto').createHash('sha256').update(output).digest('hex'),
+        at: now()
+      };
+    }
+    set(model, 'verification', { status, failedCount: count, partialApproved: false, approvedBy: null, approvedAt: null, updated: now(), evidence });
   } else if (command === 'approve-partial') {
     if (get(model, 'status') !== 'REVIEW' || get(model, 'verification.status') !== 'PARTIAL') fail('REVIEW의 PARTIAL 결과에서만 승인할 수 있습니다.');
     if (!process.stdin.isTTY || !process.stdout.isTTY) fail('stdin과 stdout이 모두 TTY인 대화형 실행에서만 허용됩니다.');

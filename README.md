@@ -62,7 +62,8 @@ npm run task -- start <id> --objective <goal> --requester <who> --designer <who>
 npm run task -- set roles.implementer=<who> roles.reviewer=<who> designCheckpoint=<sha>
 npm run task -- set status=READY
 npm run handoff                     # delegate implementation to Codex -> REVIEW
-npm run task -- record-verification --status PASSED --failed-count 0
+npm run task -- record-verification --status PASSED --failed-count 0 \
+  --evidence "npm test"           # runs it, records exit code + output hash
 npm run task -- set status=DONE
 ```
 

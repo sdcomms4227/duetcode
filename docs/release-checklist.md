@@ -62,9 +62,9 @@ push 직후 **웹 UI에서** 처리해야 하는 것(CLI로 안 되는 항목):
 |---|---|---|
 | 플러그인·저장소명 | `duetcode` | `duet` 단독은 음악 앱과 섞여 기각 |
 | 슬래시 커맨드 | `/duetcode:task`, `/duetcode:handoff` | |
-| 로컬 상태 디렉터리 | `.duet/` | 미구현. engine-externalization §3.3·§3.4에서 사용 |
-| repo root 오버라이드 env | `DUET_REPO_ROOT` | 미구현. 동 문서 §3.1 |
-| 계획된 bin 이름 | `duet-task`, `duet-handoff` | 미구현. 동 문서 §4 방안 A |
+| 로컬 상태 디렉터리 | `.duet/` | 구현 완료(`state/`, `verify.json`) |
+| repo root 오버라이드 env | `DUET_REPO_ROOT` | 구현 완료 |
+| bin 이름 | `duet-task`, `duet-handoff`, `duet-init` | 구현 완료 |
 | 버전 | `0.1.0` | 신규 저장소이므로 초기화 (구 저장소는 `0.1.1`이었다) |
 
 `HANDOFF_STATE_DIR`·`TASK_STATE_FILE`·`HANDOFF_CODEX_CMD`는 **일부러 개명하지 않았다.** 이미 동작 중인 공개 인터페이스라 바꾸면 기존 설치 대상에 breaking change다. 통일하고 싶으면 구 이름을 경고와 함께 한동안 인식하는 유예 기간이 필요하다.
@@ -88,7 +88,7 @@ push 직후 **웹 UI에서** 처리해야 하는 것(CLI로 안 되는 항목):
 
 ```
 task:lint      통과
-task:test      25 / 25
+task:test      30 / 30
 handoff:test   52 / 52
 scripts/test   16 / 16
 ```
