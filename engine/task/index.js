@@ -21,7 +21,11 @@ function requireCleanShare(model) {
   if (status) fail('현재 종결 상태의 TASK.md를 먼저 커밋해야 reset할 수 있습니다.');
 }
 function main(args = process.argv.slice(2)) {
-  const command = args.shift(); const model = load(process.env.TASK_STATE_FILE || 'TASK.md');
+  const command = args.shift();
+  // 버전 조회는 TASK.md 없이도 동작해야 한다(설치 검증·버전 확인 용도). load()보다 먼저 처리한다.
+  // 단일 소스는 package.json — plugin.json과의 일치는 scripts/test/package-meta.test.js가 강제한다.
+  if (command === '--version' || command === '-v') return console.log(require('../../package.json').version);
+  const model = load(process.env.TASK_STATE_FILE || 'TASK.md');
   if (command === 'show') return console.log(JSON.stringify(model.doc.toJS(), null, 2));
   if (command === 'lint') { lint(model); return console.log('TASK.md lint 통과'); }
   if (command === 'start') {
@@ -76,7 +80,7 @@ function main(args = process.argv.slice(2)) {
     const issue = get(model, 'issue'); if (!Number.isInteger(issue)) fail('front matter issue 번호가 필요합니다.');
     const data = model.doc.toJS(); const body = `Task: ${data.id}\nStatus: ${data.status}\nVerification: ${JSON.stringify(data.verification)}\nClosure: ${JSON.stringify(data.closure)}`;
     execFileSync('gh', ['issue', 'comment', String(issue), '--body', body], { stdio: 'inherit' }); if (['CANCELLED', 'SUPERSEDED'].includes(data.status)) set(model, 'closure.archiveRef', `issue:#${issue}`);
-  } else fail('명령: show|start|set|block|unblock|cancel|supersede|reset|record-verification|archive|approve-partial|lint|issue-sync');
+  } else fail('명령: show|start|set|block|unblock|cancel|supersede|reset|record-verification|archive|approve-partial|lint|issue-sync|--version');
   lint(model);
   save(model);
 }

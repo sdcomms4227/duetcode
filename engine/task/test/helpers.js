@@ -54,7 +54,10 @@ ${overrides}---${BODY}`;
 function fixture(source = share()) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'task-cli-')); const file = path.join(dir, 'TASK.md'); fs.writeFileSync(file, source); return file;
 }
+// 설치 사본(tools/task/index.js)이 아니라 engine/을 직접 대상으로 삼는다. 덕분에 이 저장소에서
+// 자기설치 없이 테스트가 돈다(엔진이 어디에 설치되든 테스트는 canonical 소스를 검증한다).
+const TASK_CLI = path.resolve(__dirname, '..', 'index.js');
 function cli(file, args, input, cwd) {
-  return spawnSync(process.execPath, [path.resolve('tools/task/index.js'), ...args], { cwd: cwd || path.resolve('.'), env: { ...process.env, TASK_STATE_FILE: file }, input, encoding: 'utf8' });
+  return spawnSync(process.execPath, [TASK_CLI, ...args], { cwd: cwd || process.cwd(), env: { ...process.env, TASK_STATE_FILE: file }, input, encoding: 'utf8' });
 }
-module.exports = { BODY, share, fixture, cli };
+module.exports = { BODY, share, fixture, cli, TASK_CLI };

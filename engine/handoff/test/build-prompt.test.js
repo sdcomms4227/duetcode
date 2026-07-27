@@ -67,7 +67,7 @@ test('Active Task 필수 내용과 종료·금지 계약을 prompt에 포함한�
 		'TASK.md',
 		'docs/contract.md',
 		'구현 완료 조건과 구체 요구사항',
-		'node tools/task/index.js set status=REVIEW',
+		'npm run task -- set status=REVIEW',
 		'구현 및 설계 차이',
 		'git commit',
 		'DONE 전환',

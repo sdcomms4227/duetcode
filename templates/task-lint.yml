@@ -15,5 +15,3 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run task:lint
-      - run: npm run task:test
-__HANDOFF_TEST__

@@ -9,6 +9,7 @@ const {
 	EXIT_CODES,
 	HandoffError,
 	REPO_ROOT,
+	REPO_ROOT_SOURCE,
 	STATE_SCHEMA_VERSION,
 	acquireLock,
 	clearSession,
@@ -39,7 +40,7 @@ const LINE_ASSEMBLER_CAP = 16 * 1024 * 1024;
 
 function usage() {
 	return [
-		'사용법: node tools/handoff/dispatch.js [--resume] [--high-risk-approved] [--timeout-min N]',
+		'사용법: duet-handoff [--resume] [--high-risk-approved] [--timeout-min N]  (npm run handoff -- ...)',
 		'',
 		'--resume              기록된 thread_id를 명시해 REVIEW 보완 또는 IMPLEMENTING crash 복구',
 		'--high-risk-approved  highRisk Task의 사람/Opus 게이트 통과 표시',
@@ -523,6 +524,8 @@ async function dispatch(options, runtime = {}) {
 			startedAt,
 			timeoutMs,
 			workingDirectory: REPO_ROOT,
+			// 'cwd'면 git 해석에 실패해 폴백했다는 뜻이다. 잘못된 root로 조용히 동작하지 않도록 기록에 남긴다.
+			repoRootSource: REPO_ROOT_SOURCE,
 			sandboxMode: 'workspace-write',
 			command: [invocation.executable, ...invocation.args].map((value) => redactText(value, env))
 		};
