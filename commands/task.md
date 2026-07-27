@@ -1,13 +1,13 @@
 ---
 description: duetcode TASK.md 상태머신 CLI (show/lint/start/set/record-verification/approve-partial/block/unblock/cancel/supersede/reset/archive/issue-sync)
 argument-hint: <subcommand> [args...]
-allowed-tools: Bash(node tools/task/index.js:*), Read
+allowed-tools: Bash(npm run task:*), Read
 ---
 
 저장소 루트에서 다음을 실행하고 결과를 해석해 사용자에게 보고한다:
 
 ```bash
-node tools/task/index.js $ARGUMENTS
+npm run task -- $ARGUMENTS
 ```
 
 규칙:

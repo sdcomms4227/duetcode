@@ -108,8 +108,9 @@
 - [x] `duetcode`로 전 범위 개명(§4-3)
 - [x] [engine-externalization.md §4 방안 A](engine-externalization.md) 확정
 - [x] semver 정책 선언(§5-2)
-- [ ] `git config user.email` noreply 설정 — **repo init 전에**(§4)
+- [x] `git config user.email` noreply 설정(§4) — 커밋 author가 이미 noreply 주소다
+- [x] [engine-externalization.md](engine-externalization.md) §3·§4 구현 — 게시 전에 완료(breaking 변경이라 대상이 1곳일 때 처리)
 - [ ] **신규 public 저장소 `duetcode` 생성 + 초기 커밋**
 - [ ] Secret scanning + push protection 활성화(§5-3)
 - [ ] 구 `cc-symphony` 저장소 archive + 이관 안내(§4)
-- [ ] engine-externalization §3(위치 독립화) Task 착수
+- [ ] 게시 후 `v0.1.0` 태그 — 대상의 `github:` 스펙이 이 태그를 해석한다

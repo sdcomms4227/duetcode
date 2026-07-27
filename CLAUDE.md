@@ -4,37 +4,41 @@ This file is the single source of repository instructions for coding agents work
 
 ## What this repo is
 
-duetcode is a **Claude Code plugin**, not an app. It ships a self-contained state-machine + human-gate pipeline (`engine/`) that `scripts/install.js` copies into a *target* repo's `tools/`. This repo itself has no root `package.json` — `engine/task` and `engine/handoff` are developed and tested here, then installed elsewhere verbatim.
+duetcode is an **npm package and a Claude Code plugin**, not an app. It ships a state-machine + human-gate pipeline (`engine/`) that target repos install as a devDependency and invoke through the `duet-task` / `duet-handoff` binaries. `scripts/install.js` (`duet-init`) no longer copies the engine — it only bootstraps what the *target* repo owns: `TASK.md`, protocol docs, CI, and `.gitignore` entries.
+
+The engine is location-independent: it resolves the repo root explicitly (`DUET_REPO_ROOT` → `git rev-parse` → cwd) rather than inferring it from its own path, so it behaves identically under `node_modules/`, a checkout, or anywhere else.
 
 Two engines live under `engine/`, installed as separate directories but **not** mutually independent:
 - `engine/task/` — the `TASK.md` state-machine CLI (`index.js` + `lib.js`). Standalone; `--no-handoff` installs this alone.
-- `engine/handoff/` — the Codex handoff dispatcher (`dispatch.js`, `lib.js`, `build-prompt.js`, `parse-result.js`). Depends on task in both directions of the call: it imports `../task/lib` (`build-prompt.js:4`) and shells out to the installed `tools/task/index.js` (`lib.js:7`). There is no handoff-only install.
+- `engine/handoff/` — the Codex handoff dispatcher (`dispatch.js`, `lib.js`, `build-prompt.js`, `parse-result.js`). Depends on task in both directions of the call: it imports `../task/lib` (`build-prompt.js:4`) and spawns the task CLI resolved via `require.resolve('../task/index.js')` (`lib.js`). There is no handoff-only install.
 
 ## Commands
 
-There is no root `package.json`, and the engine's own tests hard-code `tools/task/index.js` / `tools/handoff/*` paths (they run against an *installed* copy, not `engine/` directly — see `engine/task/test/helpers.js`). So install into a scratch directory **outside this repo** and run them there:
+Everything runs from this repo root against `engine/` directly — no self-install, no scratch directory:
 
 ```bash
-node scripts/install.js --target <scratch-dir>
-cd <scratch-dir> && npm install   # pulls in the yaml devDependency
-npm run task:lint                 # validates TASK.md against the current state
-npm run task:test                 # node tools/task/test/run.js
-npm run handoff:test              # node tools/handoff/test/run.js
-```
-
-**Do not self-install with `--target .`.** This repo's `.gitignore` covers none of the generated artifacts (`tools/`, `TASK.md`, `package.json`, `docs/duetcode-*.md`, `.github/`), the install appends to `.gitignore` itself, and a generated root `package.json` contradicts the "no root `package.json`" invariant above. A scratch target keeps the working tree clean and reviewable.
-
-The installer suite is the exception — it runs from this repo root, against `engine/` and `templates/` directly:
-
-```bash
-node --test scripts/test/install.test.js
+npm install         # yaml
+npm test            # task + handoff + installer suites
+npm run task:test   # node engine/task/test/run.js
+npm run handoff:test
+npm run install:test
+npm run task:lint   # validates this repo's TASK.md, if one exists
 ```
 
 Test scripts name files explicitly instead of globbing — `test/run.js` enumerates `*.test.js` itself. Both shorthands behave differently across shells and Node versions (measured): a glob is expanded by POSIX shells but not by `cmd.exe`, which is what Windows' npm uses, so the literal pattern reaches Node — and Node only expands globs from v21, leaving v18/20 to fail with `Could not find`. A directory argument diverges the other way: v18/20 recurse into it, v22 tries to load the path as a module and dies with `MODULE_NOT_FOUND`. Enumerating files removes every one of those branches.
 
-Installer flags: `--force` refreshes `tools/task`/`tools/handoff` from `engine/` (overwrites local engine edits); `--engine-only --force` syncs only `tools/`, leaving docs/package.json/TASK.md/CI untouched — this is how an already-installed target repo picks up canonical engine fixes; `--no-handoff` installs the core (state machine + lint + CI) without the Codex dispatcher.
+To exercise the *bootstrap* path, point it at a scratch directory outside this repo. Until the package is published, wire the dependency with a `file:` spec to test the real resolution path:
 
-Once installed in a target repo, the state machine is driven via `node tools/task/index.js <command>` (aliased to `npm run task`); see "State machine" below.
+```bash
+node scripts/install.js --target <scratch-dir>
+cd <scratch-dir>
+npm pkg set devDependencies.duetcode=file:/path/to/duetcode
+npm install && npm run task:lint
+```
+
+Bootstrap flags: `--no-handoff` omits the `handoff` script (it does **not** uninstall an existing one); `--target <path>` chooses the target. There is no `--force` or `--engine-only` any more — those existed to manage copied engine directories, and nothing is copied now.
+
+In a target repo the state machine is driven via `duet-task <command>`, aliased to `npm run task`; see "State machine" below.
 
 ## Architecture
 
@@ -63,7 +67,7 @@ States: `IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE`, plus t
 
 `dispatch.js` delegates `IMPLEMENTING`-state work to the `codex` CLI as a subprocess, then parses its result back into `TASK.md`. Key mechanics in `lib.js`:
 - `EXIT_CODES`: `SUCCESS` 0, `INTERNAL` 1, `GUARD` 2, `TIMEOUT` 3, `TRANSPORT` 4, `INCOMPLETE` 5 — dispatch's own exit code communicates *why* a run didn't complete, distinct from Codex's exit code. These values are part of the public surface (README "Versioning"); changing one is a breaking change.
-- `acquireLock`/`releaseLock` under `HANDOFF_STATE_DIR` (default `tools/handoff/state/`, git-ignored) make concurrent dispatch invocations mutually exclusive.
+- `acquireLock`/`releaseLock` under `HANDOFF_STATE_DIR` (default `<repo-root>/.duet/state/`, git-ignored) make concurrent dispatch invocations mutually exclusive. The state lives outside the engine on purpose — the engine is a dependency that gets reinstalled, and state must survive that.
 - `--resume` reuses a recorded `thread_id` from session state — for continuing a REVIEW round or recovering from an IMPLEMENTING crash without losing Codex conversation context.
 - `--high-risk-approved` is the CLI-side acknowledgment of the `highRisk` gate before a risky task is allowed to dispatch; `--timeout-min N` caps the whole Codex run (default 30, `DEFAULT_TIMEOUT_MINUTES`).
 - `redactText` / `sanitizeFile` exist because Codex output and prompts get logged to `HANDOFF_STATE_DIR` — secrets must not leak into that state.
@@ -72,14 +76,14 @@ States: `IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE`, plus t
 
 ### Installer (`scripts/install.js`)
 
-Deterministic and idempotent by design — but "idempotent" is not "read-only". `copyDir`/`ensureFileFromTemplate` are skip-if-exists, while `mergePackageJson` rewrites the target's `package.json` and `appendGitignore` merges into its `.gitignore` **entry by entry** (a snippet that is only partly present still gets its missing lines — the old all-or-nothing check meant new entries never reached existing installs). Both only ever add.
+Bootstrap only — it creates what the target repo *owns* and never the engine. Deterministic and idempotent, but "idempotent" is not "read-only": `ensureFileFromTemplate` is skip-if-exists, while `mergePackageJson` rewrites the target's `package.json` and `appendGitignore` merges into its `.gitignore` **entry by entry** (a snippet that is only partly present still gets its missing lines — an all-or-nothing check would mean new entries never reach existing installs). Both only ever add.
 
 Upgrading an existing install is the harder half, and the rules are deliberate:
-- A script is replaced only when its current value matches a known previous value in `LEGACY_SCRIPTS`. Anything else might be the user's own edit, so it is reported as a conflict and left untouched.
-- `--engine-only` keeps its contract of never touching `package.json`; it only *reports* outdated scripts and prints the value to change them to.
-- `--no-handoff` skips the `handoff*` scripts — never ship a command whose target file was not installed — but it does **not** remove an existing handoff install. It means "don't add", not "uninstall".
+- A script is replaced only when its current value matches a known previous value in `LEGACY_SCRIPTS` (e.g. `node tools/task/index.js` → `duet-task`). Anything else might be the user's own edit, so it is reported as a conflict and left untouched.
+- Leftovers from the copied-engine era — `task:test` / `handoff:test` scripts, a stale `tools/` directory — are **reported, never deleted**. Removing a user's files is not the installer's call.
+- `--no-handoff` skips the `handoff` script but does **not** remove an existing handoff setup. It means "don't add", not "uninstall".
 
-`--force` is the only way to overwrite the engine directories. The installer intentionally uses **only Node built-ins** (no `yaml` import) because it must run before `npm install` has populated the target's `devDependencies`.
+The installer intentionally uses **only Node built-ins** (no `yaml` import) because it runs before the target's `npm install` has fetched anything.
 
 ### Plugin surface
 
@@ -89,7 +93,7 @@ Upgrading an existing install is the harder half, and the rules are deliberate:
 
 ### Project structure
 
-Treat `engine/task/` and `engine/handoff/` as the canonical runtime sources; installed `tools/` directories are generated copies. Installer logic and tests live in `scripts/install.js` and `scripts/test/`. Plugin commands are in `commands/`, reusable workflow instructions in `skills/`, generated-file sources in `templates/`, and design references in `docs/`. Update the canonical engine or template rather than a temporary installation artifact.
+`engine/task/` and `engine/handoff/` are the runtime sources and the only copy that exists — target repos consume them from `node_modules`, so there is no generated duplicate to keep in sync any more. Bootstrap logic and its tests live in `scripts/install.js` and `scripts/test/`. Plugin commands are in `commands/`, reusable workflow instructions in `skills/`, generated-file sources in `templates/`, and design references in `docs/`. Update the canonical engine or template rather than a temporary installation artifact.
 
 Three docs are worth reading before specific kinds of change: `docs/pipeline-design.md` is the precise spec for the state machine, verification, and gates — consult it before altering any rule, and keep it in sync when you do. `docs/engine-externalization.md` is an accepted but unimplemented plan to make the engine location-independent; read it before touching path assumptions such as `REPO_ROOT` or `TASK_CLI`. `docs/release-checklist.md` tracks the remaining public-release steps and known migration traps.
 
@@ -103,7 +107,7 @@ Tests use `node:test` with `node:assert/strict` and the `*.test.js` suffix. Add 
 
 ### Commits and pull requests
 
-Follow the repository's Conventional Commit pattern, for example `feat(install): add --engine-only flag` or `docs: add MIT LICENSE`. Keep each commit to one logical change and use `feat`, `fix`, `test`, `refactor`, or `docs`, with a scope when useful. Pull requests should describe the behavior change, link related issues, and list verification commands and results. Explicitly call out changes to templates, state-machine rules, public schemas, security-sensitive handoff behavior, or human gates. Screenshots are only needed for visible plugin or documentation-rendering changes.
+Follow the repository's Conventional Commit pattern, for example `feat(install): add --no-handoff flag` or `docs: add MIT LICENSE`. Keep each commit to one logical change and use `feat`, `fix`, `test`, `refactor`, or `docs`, with a scope when useful. Pull requests should describe the behavior change, link related issues, and list verification commands and results. Explicitly call out changes to templates, state-machine rules, public schemas, security-sensitive handoff behavior, or human gates. Screenshots are only needed for visible plugin or documentation-rendering changes.
 
 ## Design invariants (do not casually override)
 
