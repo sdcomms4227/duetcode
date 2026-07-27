@@ -6,7 +6,7 @@ const STATES = ['IDLE', 'DESIGN', 'READY', 'IMPLEMENTING', 'REVIEW', 'DONE', 'BL
 const ACTIVE = ['DESIGN', 'READY', 'IMPLEMENTING', 'REVIEW'];
 const TERMINAL = ['DONE', 'CANCELLED', 'SUPERSEDED'];
 const TRANSITIONS = { IDLE: ['DESIGN'], DESIGN: ['READY'], READY: ['IMPLEMENTING'], IMPLEMENTING: ['REVIEW'], REVIEW: ['DONE', 'IMPLEMENTING', 'READY'] };
-const EMPTY_VERIFICATION = () => ({ status: null, failedCount: 0, partialApproved: false, approvedBy: null, approvedAt: null, updated: null });
+const EMPTY_VERIFICATION = () => ({ status: null, failedCount: 0, partialApproved: false, approvedBy: null, approvedAt: null, updated: null, evidence: null });
 // start 시 '## Active Task' 이하 본문을 이 스켈레톤으로 교체해 이전 Task 본문(stale) 잔존을 원천 차단한다.
 // 플레이스홀더 '미정'은 blank()/meaningful()이 빈 것으로 간주하므로, 설계자가 실제 내용으로 교체하기 전에는 READY lint가 거부된다.
 const STARTER_BODY = `(설계자가 이 아래를 새 업무 내용으로 작성한다. 아래 플레이스홀더는 READY 전환 전에 실제 내용으로 교체해야 하며, 미교체 시 lint가 READY를 거부한다.)
@@ -50,7 +50,21 @@ function parseSource(source) {
   return { doc, data: doc.toJS(), body: match[2] };
 }
 function load(file = 'TASK.md') { const source = fs.readFileSync(file, 'utf8'); return { file, source, ...parseSource(source) }; }
-function save(model) { model.doc.set('updated', now()); fs.writeFileSync(model.file, `---\n${model.doc.toString().trimEnd()}\n---${model.body}`, 'utf8'); }
+// 임시 파일에 쓴 뒤 rename한다. TASK.md는 파이프라인 전체가 걸린 단일 소스인데, 직접 덮어쓰면
+// 쓰기 도중 죽었을 때 반쯤 쓰인 파일이 남아 lint·show·handoff가 전부 막힌다.
+// (핸드오프 쪽 writeJson은 처음부터 이 방식이었다 — 같은 저장소 안에서 원자성 규율이 갈려 있었다.)
+function save(model) {
+  model.doc.set('updated', now());
+  const content = `---\n${model.doc.toString().trimEnd()}\n---${model.body}`;
+  const temporary = `${model.file}.${process.pid}.${process.hrtime.bigint()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, content, 'utf8');
+    fs.renameSync(temporary, model.file);
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch { /* 실패한 임시 파일 정리는 best-effort */ }
+    throw error;
+  }
+}
 const get = (model, key) => model.doc.getIn(key.split('.'));
 const set = (model, key, value) => model.doc.setIn(key.split('.'), value);
 function git(args) { return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
@@ -107,6 +121,19 @@ function validate(data, body) {
     if (v.partialApproved) {
       if (v.status !== 'PARTIAL' || blank(v.approvedBy) || !iso(v.approvedAt)) errors.push('PARTIAL 승인의 승인자와 ISO 8601 승인 시각이 유효하지 않습니다.');
     } else if (v.approvedBy != null || v.approvedAt != null) errors.push('미승인 상태의 approvedBy/approvedAt은 null이어야 합니다.');
+    // evidence는 선택 필드다(구버전 TASK.md 호환). 있으면 형식을 강제하고, 무엇보다
+    // "증거가 실패를 말하는데 PASSED로 기록된" 모순을 막는다 — 그게 이 필드의 존재 이유다.
+    if (v.evidence != null) {
+      const e = v.evidence;
+      if (typeof e !== 'object' || Array.isArray(e)) errors.push('verification.evidence는 객체 또는 null이어야 합니다.');
+      else {
+        if (blank(e.command)) errors.push('verification.evidence.command가 필요합니다.');
+        if (!Number.isInteger(e.exitCode)) errors.push('verification.evidence.exitCode는 정수여야 합니다.');
+        if (!/^[a-f0-9]{64}$/.test(String(e.outputSha256))) errors.push('verification.evidence.outputSha256은 sha256 16진 해시여야 합니다.');
+        if (!iso(e.at)) errors.push('verification.evidence.at은 ISO 8601 일시여야 합니다.');
+        if (v.status === 'PASSED' && e.exitCode !== 0) errors.push('PASSED인데 증거의 exitCode가 0이 아닙니다.');
+      }
+    }
   }
   if (['REVIEW', 'DONE'].includes(data.status)) {
     if (!labelled(body, '다음 담당자')) errors.push("'다음 담당자' 불릿이 비어 있습니다.");

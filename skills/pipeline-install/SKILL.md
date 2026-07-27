@@ -11,25 +11,26 @@ description: duetcode 파이프라인(TASK.md 상태머신 + Codex 핸드오프)
 
 1. 대상이 git 저장소인지 확인한다(`git rev-parse --show-toplevel`). 아니면 사용자에게 `git init` 여부를 묻는다.
 
-2. 설치기를 실행한다. 플러그인 파일은 `${CLAUDE_PLUGIN_ROOT}`에 있다.
+2. 엔진을 devDependency로 걸고 부트스트랩한다.
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/install.js" --target .
+   npm i -D github:sdcomms4227/duetcode#v0.1.0
+   npx duet-init
    ```
 
-   - **코어만**(Codex 핸드오프 없이 task 상태머신 + lint + CI): `--no-handoff`
-   - **엔진 갱신**(기존 tools/task·tools/handoff 덮어쓰기, 로컬 엔진 수정은 사라짐): `--force`
-   - **엔진만 동기화**(문서·package.json·TASK.md·CI·.gitignore 미변경, canonical 소스에서 엔진만 갱신): `--engine-only --force`
+   - **코어만**(Codex 핸드오프 없이 task 상태머신 + lint + CI): `npx duet-init --no-handoff`
    - 기본은 "없으면 생성, 있으면 보존" — 기존 `TASK.md`·`package.json`·`.gitignore` 사용자 내용을 덮어쓰지 않는다.
+   - **엔진은 대상 저장소에 복사되지 않는다.** `node_modules/duetcode`에서 실행되며 버전은 lockfile에 고정된다. 갱신은 태그를 올리고 `npm install`.
 
 3. 의존성 설치와 검증:
 
    ```bash
    npm install
-   node tools/task/index.js lint     # TASK.md(IDLE) 통과 확인
-   node --test tools/task/test/*.test.js
-   node --test tools/handoff/test/*.test.js   # 핸드오프 설치 시
+   npm run task:lint      # TASK.md(IDLE) 통과 확인
+   npx duet-task --version
    ```
+
+   엔진 테스트는 duetcode 저장소에서 돈다 — 대상 저장소가 다시 돌릴 필요가 없다.
 
 4. `docs/duetcode-collaboration-protocol.md`의 `<...>` 자리표시자(모델·기본 브랜치·불변식·언어)를 프로젝트에 맞게 채우고, 저장소의 에이전트 지침 문서(`CLAUDE.md`/`AGENTS.md`)에서 이 문서를 협업 규약 단일 소스로 참조하게 한다.
 

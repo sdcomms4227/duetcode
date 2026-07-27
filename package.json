@@ -1,0 +1,47 @@
+{
+  "name": "duetcode",
+  "version": "0.1.0",
+  "description": "TASK.md 상태머신 + 사람 게이트 파이프라인. 대상 저장소에 devDependency로 설치해 쓴다.",
+  "license": "MIT",
+  "author": {
+    "name": "sdcomms"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sdcomms4227/duetcode.git"
+  },
+  "keywords": [
+    "workflow",
+    "state-machine",
+    "handoff",
+    "codex",
+    "claude",
+    "pipeline"
+  ],
+  "bin": {
+    "duet-task": "engine/task/index.js",
+    "duet-handoff": "engine/handoff/dispatch.js",
+    "duet-init": "scripts/install.js"
+  },
+  "files": [
+    "engine",
+    "templates",
+    "commands",
+    "skills",
+    "scripts/install.js"
+  ],
+  "scripts": {
+    "task": "node engine/task/index.js",
+    "task:lint": "node engine/task/index.js lint",
+    "task:test": "node engine/task/test/run.js",
+    "handoff:test": "node engine/handoff/test/run.js",
+    "install:test": "node scripts/test/run.js",
+    "test": "npm run task:test && npm run handoff:test && npm run install:test"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

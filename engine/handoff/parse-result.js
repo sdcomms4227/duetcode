@@ -116,7 +116,7 @@ function parseJsonl(source, options = {}) {
 function main(args = process.argv.slice(2)) {
 	const jsonlFile = args[0];
 	if (!jsonlFile) {
-		console.error('사용법: node tools/handoff/parse-result.js <events.jsonl> [stderr.log]');
+		console.error('사용법: node <duetcode>/engine/handoff/parse-result.js <events.jsonl> [stderr.log]');
 		process.exitCode = 1;
 		return;
 	}

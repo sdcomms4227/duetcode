@@ -1,5 +1,9 @@
 # --- duetcode pipeline (install.js가 추가) ---
-# 핸드오프 런타임 상태(세션 id·PID·lock·run 산출물) — 커밋 금지
+# duetcode는 yaml devDependency를 쓰므로 설치 절차에 npm install이 포함된다 — 커밋 금지
+node_modules/
+# duetcode 런타임 상태·로컬 설정 — 커밋 금지
+# (핸드오프 세션 id·PID·lock·run 산출물, 검증 하니스의 계정·recordId)
+.duet/
+# 구버전 배치 흔적(엔진이 tools/에 복사되던 시절) — 남아 있으면 함께 무시한다
 tools/handoff/state/
-# 검증 하니스 로컬 비밀값(계정·recordId) — 커밋 금지
 tools/task/verify.local.json

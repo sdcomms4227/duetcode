@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node -e \"const fs=require('fs');if(fs.existsSync('TASK.md')){require('child_process').spawnSync(process.execPath,['tools/task/index.js','lint'],{stdio:'inherit'})}\""
+            "command": "node -e \"const fs=require('fs');if(fs.existsSync('TASK.md')){require('child_process').spawnSync('npm',['run','task:lint'],{stdio:'inherit',shell:true})}\""
           }
         ]
       }

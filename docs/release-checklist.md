@@ -62,9 +62,9 @@ push 직후 **웹 UI에서** 처리해야 하는 것(CLI로 안 되는 항목):
 |---|---|---|
 | 플러그인·저장소명 | `duetcode` | `duet` 단독은 음악 앱과 섞여 기각 |
 | 슬래시 커맨드 | `/duetcode:task`, `/duetcode:handoff` | |
-| 로컬 상태 디렉터리 | `.duet/` | 미구현. engine-externalization §3.3·§3.4에서 사용 |
-| repo root 오버라이드 env | `DUET_REPO_ROOT` | 미구현. 동 문서 §3.1 |
-| 계획된 bin 이름 | `duet-task`, `duet-handoff` | 미구현. 동 문서 §4 방안 A |
+| 로컬 상태 디렉터리 | `.duet/` | 구현 완료(`state/`, `verify.json`) |
+| repo root 오버라이드 env | `DUET_REPO_ROOT` | 구현 완료 |
+| bin 이름 | `duet-task`, `duet-handoff`, `duet-init` | 구현 완료 |
 | 버전 | `0.1.0` | 신규 저장소이므로 초기화 (구 저장소는 `0.1.1`이었다) |
 
 `HANDOFF_STATE_DIR`·`TASK_STATE_FILE`·`HANDOFF_CODEX_CMD`는 **일부러 개명하지 않았다.** 이미 동작 중인 공개 인터페이스라 바꾸면 기존 설치 대상에 breaking change다. 통일하고 싶으면 구 이름을 경고와 함께 한동안 인식하는 유예 기간이 필요하다.
@@ -88,21 +88,31 @@ push 직후 **웹 UI에서** 처리해야 하는 것(CLI로 안 되는 항목):
 
 ```
 task:lint      통과
-task:test      22 / 22
-handoff:test   49 / 49
-scripts/test    7 /  7
+task:test      30 / 30
+handoff:test   52 / 52
+scripts/test   16 / 16
 ```
 
-재현 절차(이 저장소에는 root `package.json`이 없어 자기설치가 필요하다):
+> 이 저장소에서 `npm test` 하나로 전부 돈다(엔진 외부화 이후 자기설치 절차가 사라졌다).
+
+> 개명 직후에는 22 / 49 / 7이었다. 러너 계약 3건씩과 부트스트랩 회귀가 더해졌고, 엔진 외부화로 설치기 테스트가 새 계약(엔진 미복사·duet-* 스크립트·잔재 보고)에 맞게 재작성되면서 16으로 정리됐다.
+
+재현 절차:
+
+```bash
+npm install && npm test
+```
+
+부트스트랩 경로까지 확인하려면 저장소 밖 스크래치 디렉터리를 대상으로 삼는다. 게시 전에는 `github:` 스펙을 쓸 수 없으므로 `file:`로 실제 해석 경로를 검증한다:
 
 ```bash
 node scripts/install.js --target <scratch-dir>
-cd <scratch-dir> && npm install
-npm run task:lint && npm run task:test && npm run handoff:test
-cd <repo> && node --test scripts/test/*.test.js
+cd <scratch-dir>
+npm pkg set devDependencies.duetcode=file:/path/to/duetcode
+npm install && npm run task:lint && npx duet-task --version
 ```
 
-> engine-externalization §3.5를 구현하면 이 자기설치 절차가 없어지고 `node --test engine/*/test/*.test.js`로 직접 돌게 된다. 그때 **CLAUDE.md "Commands" 절을 반드시 갱신**해야 한다.
+> 명령에 셸 glob이나 디렉터리 인자를 쓰지 말 것 — 셸·Node 버전마다 동작이 갈린다(실측: cmd.exe는 glob을 확장하지 않고 Node 자체 glob은 21+라 18·20은 `Could not find`로 exit 1; 디렉터리 인자는 18·20이 재귀 실행하지만 22는 `MODULE_NOT_FOUND`). 각 `test/run.js`를 호출하거나 파일을 명시한다.
 
 ## 6. 기존 설치 대상 마이그레이션 — 놓치기 쉬운 함정
 
@@ -124,11 +134,29 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 
 `scripts/test/install.test.js`에는 이 파일명 단정이 없어 테스트로는 안 잡힌다. **눈으로 확인해야 한다.**
 
+### 6.0 엔진 사본(`tools/`) 정리 — 외부화 이후
+
+엔진은 더 이상 대상 저장소에 복사되지 않는다. 기존 설치 대상에서:
+
+1. `npm i -D github:sdcomms4227/duetcode#<tag>` 후 `npx duet-init` 재실행
+2. 보고되는 잔재를 손으로 정리 — `git rm -r tools/`, 그리고 불필요해진 `task:test`·`handoff:test` 스크립트 삭제
+3. 진행 중인 핸드오프가 있으면 `tools/handoff/state/`를 `.duet/state/`로 먼저 옮긴다
+4. `tools/task/verify.local.json`을 쓰고 있었다면 `.duet/verify.json`으로 옮긴다
+
+`duet-init`은 사용자 파일을 지우지 않으므로 이 단계는 **수동**이다. 스크립트 값(`node tools/task/index.js` 등)은 자동 마이그레이션된다.
+
+### 6.1 스크립트·`.gitignore`는 재설치로 갱신된다
+
+구형 스크립트(`node tools/task/index.js` 등)와 `.gitignore` 신규 항목은 `npx duet-init` 재실행으로 자동 반영된다.
+
+- `mergePackageJson`은 기존 값이 `LEGACY_SCRIPTS`의 알려진 구형 값과 정확히 일치할 때만 `duet-*`로 갱신한다(`migrate-script` 로그). 사용자가 손댄 스크립트는 건드리지 않고 충돌로 보고한다 — 그건 수동 조치 대상이다.
+- `appendGitignore`는 항목 단위로 병합하므로, 일부만 있는 저장소에도 빠진 항목(`.duet/` 등)만 추가된다.
+- 잔재(`task:test`·`handoff:test` 스크립트, `tools/` 디렉터리)는 **보고만 하고 지우지 않는다**(§6.0).
+
 ## 7. 다음 작업
 
-배포가 끝나면 [engine-externalization.md](engine-externalization.md) §3(위치 독립화)이 다음 Task다. public 배포로 §4 방안 A(npm devDependency)의 유일한 관문이던 private 인증 문제가 해소되어, **방안 A가 확정안**이 되었다.
+[engine-externalization.md](engine-externalization.md)는 **게시 전에 먼저 끝냈다** — §3 위치 독립화와 §4 방안 A를 모두 구현했다. 순서를 뒤집은 이유는 외부화가 `install.js`를 크게 들어내는 breaking 변경이고, 대상 저장소가 1곳뿐인 지금이 가장 싼 시점이기 때문이다. 게시 이후였다면 마이그레이션 비용이 붙었다.
 
-착수 전 남은 결정(동 문서 §7):
+§7 결정은 확정됐다: 대상은 Node 저장소로 한정(방안 A 유지), 기존 `tools/` 레이아웃 지원은 종료(잔재는 `duet-init`이 보고만 한다).
 
-- [ ] Node 외 저장소에도 설치할 계획이 있는가? → 있으면 방안 A가 부적합해진다
-- [ ] 기존 `tools/` 레이아웃 지원을 언제 끊을 것인가
+남은 것은 §1의 게시 절차뿐이다. 게시 후 태그(`v0.1.0`)를 붙여야 대상 저장소의 `github:` 스펙이 해석된다 — 태그 없이는 설치가 실패한다.

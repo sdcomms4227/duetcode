@@ -5,7 +5,7 @@ description: duetcode 파이프라인 운영 매뉴얼 — TASK.md 상태머신�
 
 # duetcode pipeline 운영
 
-`TASK.md`가 현재 진행 중인 단일 Task의 단일 소스다. 상태 변경·lint는 반드시 `node tools/task/index.js`로 한다(front matter 직접 편집 금지). 프로즈 본문(요구사항·근거·검증 로그)만 사람/에이전트가 편집한다.
+`TASK.md`가 현재 진행 중인 단일 Task의 단일 소스다. 상태 변경·lint는 반드시 `npm run task`로 한다(front matter 직접 편집 금지). 프로즈 본문(요구사항·근거·검증 로그)만 사람/에이전트가 편집한다.
 
 ## 상태머신
 
@@ -21,13 +21,13 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 ## 핵심 명령
 
 ```bash
-node tools/task/index.js show | lint
-node tools/task/index.js start <id> --objective <목표> --requester <요청자> --designer <설계자>
-node tools/task/index.js set roles.implementer=<모델>  "roles.reviewer=<모델>"  designCheckpoint=<SHA>
-node tools/task/index.js set status=READY | IMPLEMENTING | REVIEW | DONE  [--design-checkpoint <v>]
-node tools/task/index.js record-verification --status PASSED|FAILED|PARTIAL --failed-count <N>
-node tools/task/index.js approve-partial          # TTY 필요
-node tools/task/index.js block "<사유>" | unblock | cancel "<사유>" | supersede <대체id> "<사유>" | reset
+npm run task -- show | lint
+npm run task -- start <id> --objective <목표> --requester <요청자> --designer <설계자>
+npm run task -- set roles.implementer=<모델>  "roles.reviewer=<모델>"  designCheckpoint=<SHA>
+npm run task -- set status=READY | IMPLEMENTING | REVIEW | DONE  [--design-checkpoint <v>]
+npm run task -- record-verification --status PASSED|FAILED|PARTIAL --failed-count <N>
+npm run task -- approve-partial          # TTY 필요
+npm run task -- block "<사유>" | unblock | cancel "<사유>" | supersede <대체id> "<사유>" | reset
 ```
 
 `verification.*`·`blocked.*`·`closure.*`는 `task set`으로 못 바꾼다 — 각 전용 명령만.

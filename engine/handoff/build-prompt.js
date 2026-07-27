@@ -94,7 +94,7 @@ function buildPrompt(options = {}) {
 		'- 요청된 구현과 로컬 검증을 완료한다.',
 		'- ' + taskFile + ' front matter는 직접 편집하지 않는다.',
 		'- ' + taskFile + ' 본문 ‘구현 및 설계 차이’에 구현 결과, 실측으로 확정한 사항, 설계 차이와 근거를 기록한다.',
-		'- 완료 상태가 확인된 뒤 node tools/task/index.js set status=REVIEW 를 실행한다.',
+		'- 완료 상태가 확인된 뒤 npm run task -- set status=REVIEW 를 실행한다.',
 		'- 종료 보고는 자연어 성공 선언이 아니라 실제 front matter 상태, task lint 결과, Git 변경을 근거로 한다.',
 		'',
 		'### 금지',

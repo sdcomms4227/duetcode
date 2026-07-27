@@ -83,7 +83,8 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 
 ## 5. verification 블록 · DONE 게이트
 
-- 필드: `status`(PASSED|FAILED|PARTIAL|null), `failedCount`(int), `partialApproved`(bool), `approvedBy`(str|null), `approvedAt`(ISO|null), `updated`(ISO|null).
+- 필드: `status`(PASSED|FAILED|PARTIAL|null), `failedCount`(int), `partialApproved`(bool), `approvedBy`(str|null), `approvedAt`(ISO|null), `updated`(ISO|null), `evidence`(객체|null).
+- **`evidence`(선택)**: `task record-verification --evidence "<명령>"`을 주면 그 명령을 **실제로 실행**해 `{command, exitCode, outputSha256, at}`을 남긴다. 문자열만 받아 적으면 "테스트를 돌렸다"는 자기 신고에 지나지 않기 때문이다. lint는 **`PASSED`인데 `exitCode ≠ 0`인 모순을 거부**한다. 구버전 `TASK.md` 호환을 위해 필드 자체는 선택이다.
 - **쓰기 경로 제한**: `verification.*`는 `task set`으로 직접 수정 불가. 경로는 3개뿐 — `task record-verification`(수동 기록), `task verify`(자동 하니스, Tier 2), `task approve-partial`(승인 3필드).
 - `task record-verification --status <S> --failed-count <N>`: **REVIEW에서만 허용**, 승인 3필드 항상 초기화.
 - `task approve-partial`: `stdin.isTTY && stdout.isTTY`를 검사해 **비대화형 실행 거부**. TTY 검사는 자동 실행 방지 장치일 뿐 사람 신원 보증이 아니다.
@@ -99,7 +100,7 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 - `task archive <ref>`: 종결 상태에서 `closure.archiveRef` 설정. 단순 존재가 아니라 **현재 Task·closure 내용이 대상에 실제 보존됐는지 검증**(`commit:<sha>` / `docs:<path>`의 `<!-- TASK-ARCHIVE ... -->` 블록). `issue:#N`은 `task issue-sync` 경유만.
 - **`task reset`(종결→IDLE)**: `DONE`은 커밋되어 clean일 때만; `CANCELLED·SUPERSEDED`는 (a) `closure.archiveRef` 존재 또는 (b) 커밋되어 clean일 때만. 이력이 어디에도 없는 채 지워지는 것을 차단.
 
-## 7. 명령 표면 (`tools/task`)
+## 7. 명령 표면 (`duet-task`)
 
 런타임: Node.js ≥ 18. front matter 파싱·재작성은 `yaml`(eemeli) Document API(주석·키 순서 보존).
 
@@ -117,22 +118,22 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 | `task approve-partial` | PARTIAL→DONE 사람 승인(TTY) |
 | `task issue-sync` | Issue 코멘트(수동 전용, 외부 쓰기) |
 
-- **lint 밖**: 전환 이력 검증(사람 직접 편집은 커밋 전 사람 리뷰가 최종 방어선). **CI는 `task lint` + `task:test`(+ 핸드오프 설치 시 `handoff:test`)를 실행**한다.
+- **lint 밖**: 전환 이력 검증(사람 직접 편집은 커밋 전 사람 리뷰가 최종 방어선). **대상 CI는 `task lint`만 실행**한다(엔진 테스트는 duetcode 저장소에서 돈다).
 
-## 8. 핸드오프 오케스트레이션 (`tools/handoff`)
+## 8. 핸드오프 오케스트레이션 (`duet-handoff`)
 
-`TASK.md`를 공유 메모리, `tools/task`를 상태머신, CLI를 전송 계층으로 둔다. Claude가 오케스트레이터가 되어 Codex를 단발 호출하고 결과를 회수하는 단방향 위임.
+`TASK.md`를 공유 메모리, `duet-task`를 상태머신, CLI를 전송 계층으로 둔다. Claude가 오케스트레이터가 되어 Codex를 단발 호출하고 결과를 회수하는 단방향 위임.
 
 - `npm run handoff`가 READY·highRisk·lock을 검사하고 `READY→IMPLEMENTING` 전환 성공을 실측한 뒤, 저장소 루트 cwd에서 `codex exec --json`을 한 번 spawn한다. 프롬프트는 `build-prompt.js`가 만들어 stdin으로 전달.
 - 신규: `codex exec --json -c 'sandbox_mode="workspace-write"' -`. 재개: `codex exec resume ... <SESSION_ID> -`. `-o` 파일 출력은 쓰지 않는다(강제종료 시 원문 잔존 방지) — 모델 최종 메시지는 정화된 `events.jsonl`에만 남는다. 재개 session id는 최초 JSONL `thread.started.thread_id`만 저장해 명시 사용(`--last` 미사용).
 - **성공 판정은 exit code 하나로 하지 않는다**: 종료 후 front matter status(REVIEW 도달)·`task lint`·`git status --porcelain`을 함께 실측. **REVIEW 미도달은 exit 0이어도 실패.**
 - 동시 실행 제어는 원자 lock, `(id,status,updated)` idempotency key. timeout(기본 30분)·전송 실패·helper 부재(무산출 exit 0)는 성공으로 해석하지 않고 자동 재시도·DONE 전환·rollback 없이 정지.
 - Codex에 주는 프롬프트는 commit/push/release·DONE 전환·issue-sync·record-verification·front matter 직접 편집·Task 범위 밖 변경을 **금지**한다.
-- `Codex` 실행 파일은 `HANDOFF_CODEX_CMD` env(JSON 배열 또는 문자열)로 교체 가능. 상태는 `HANDOFF_STATE_DIR`(기본 `tools/handoff/state/`, 커밋 제외).
+- `Codex` 실행 파일은 `HANDOFF_CODEX_CMD` env(JSON 배열 또는 문자열)로 교체 가능. 상태는 `HANDOFF_STATE_DIR`(기본 `<repo-root>/.duet/state/`, 커밋 제외).
 
 ## 9. 검증 하니스 `task verify` (Tier 2 — 미구현)
 
-비파괴 HTTP 스모크를 CLI로 고정할 예정. 허용 프로파일 화이트리스트(운영 프로파일 거부), 비파괴 원칙(read-only GET·no-op·검증-실패 프로빙), 최대 실행 시간, 소유권 확인 후 프로세스 종료, 실패 시 cleanup. 계정·데이터는 `verify.local.json`(커밋 제외). 설정 누락은 해당 항목만 `PARTIAL`.
+비파괴 HTTP 스모크를 CLI로 고정할 예정. 허용 프로파일 화이트리스트(운영 프로파일 거부), 비파괴 원칙(read-only GET·no-op·검증-실패 프로빙), 최대 실행 시간, 소유권 확인 후 프로세스 종료, 실패 시 cleanup. 계정·데이터는 `.duet/verify.json`(커밋 제외). 설정 누락은 해당 항목만 `PARTIAL`.
 
 ## 10. 사람 게이트 (자동화 금지 지점)
 
@@ -147,9 +148,12 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 
 ```text
 TASK.md                              # Active Task 상태(단일 소스)
-tools/task/{index.js,lib.js,test/}   # 상태머신 CLI + 테스트
-tools/handoff/{dispatch.js,lib.js,build-prompt.js,parse-result.js,test/,state/}
-.github/workflows/task-lint.yml      # CI: npm run task:lint + task:test (+ handoff:test)
+.duet/state/                         # 핸드오프 런타임 상태(gitignore)
+.duet/verify.json                    # 검증 하니스 로컬 설정(gitignore, Tier 2)
+.github/workflows/task-lint.yml      # CI: npm run task:lint
 docs/duetcode-collaboration-protocol.md
-package.json                         # task*/handoff* 스크립트, yaml devDep
+package.json                         # duetcode devDep + task/task:lint/handoff 스크립트
+node_modules/duetcode/               # 엔진 실체(gitignore) — 대상 저장소에 사본이 생기지 않는다
 ```
+
+엔진은 대상 저장소에 복사되지 않는다. 어떤 버전을 쓰는지는 lockfile에 커밋되고, 갱신은 `npm install`이다.

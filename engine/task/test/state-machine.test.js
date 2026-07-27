@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { parseSource } = require('../lib');
 const { share, fixture, cli } = require('./helpers');
 
@@ -44,7 +45,7 @@ test('다중 set 중 금지 키가 있으면 파일을 저장하지 않는다', 
 test('set은 status와 일반 키를 함께 적용한다', () => {
   const file = fixture(); const result = cli(file, ['set', 'issue=613', 'status=IMPLEMENTING']); assert.equal(result.status, 0, result.stderr);
   const data = parseSource(fs.readFileSync(file, 'utf8')).data; assert.equal(data.issue, 613); assert.equal(data.status, 'IMPLEMENTING');
-  assert.deepEqual(data.verification, { status: null, failedCount: 0, partialApproved: false, approvedBy: null, approvedAt: null, updated: null });
+  assert.deepEqual(data.verification, { status: null, failedCount: 0, partialApproved: false, approvedBy: null, approvedAt: null, updated: null, evidence: null });
 });
 
 test('start는 DESIGN 필수 메타를 원자적으로 생성한다', () => {
@@ -113,16 +114,16 @@ test("'영향 범위'가 미정이면 lint/READY를 거부한다(handoff build-p
   assert.match(result.stderr, /영향 범위/);
 });
 
-test('REVIEW → IMPLEMENTING은 verification 6필드를 원자 초기화한다', () => {
+test('REVIEW → IMPLEMENTING은 verification을 원자 초기화한다', () => {
   const file = fixture(); const result = cli(file, ['set', 'status=IMPLEMENTING']); assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(parseSource(fs.readFileSync(file, 'utf8')).data.verification, { status: null, failedCount: 0, partialApproved: false, approvedBy: null, approvedAt: null, updated: null });
+  assert.deepEqual(parseSource(fs.readFileSync(file, 'utf8')).data.verification, { status: null, failedCount: 0, partialApproved: false, approvedBy: null, approvedAt: null, updated: null, evidence: null });
   const done = cli(file, ['set', 'status=DONE']); assert.equal(done.status, 1); assert.match(done.stderr, /허용되지 않은 전환/);
 });
 
-test('IMPLEMENTING → REVIEW는 verification 6필드를 원자 초기화한다', () => {
+test('IMPLEMENTING → REVIEW는 verification을 원자 초기화한다', () => {
   const file = fixture(share().replace('status: REVIEW', 'status: IMPLEMENTING').replace(/verification:\n(?:  .*\n){6}/, 'verification: null\n'));
   const result = cli(file, ['set', 'status=REVIEW']); assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(parseSource(fs.readFileSync(file, 'utf8')).data.verification, { status: null, failedCount: 0, partialApproved: false, approvedBy: null, approvedAt: null, updated: null });
+  assert.deepEqual(parseSource(fs.readFileSync(file, 'utf8')).data.verification, { status: null, failedCount: 0, partialApproved: false, approvedBy: null, approvedAt: null, updated: null, evidence: null });
 });
 
 test('REVIEW의 PASSED 검증은 DONE 전환을 허용한다', () => {
@@ -174,4 +175,53 @@ test('highRisk Task의 reset은 highRisk를 false로 초기화한다', () => {
   assert.equal(data.status, 'IDLE');
   assert.equal(data.highRisk, false);
   assert.equal(data.roles, null);
+});
+
+test('--evidence는 명령을 실제로 실행해 exit code와 출력 해시를 남긴다', () => {
+  // "테스트를 돌렸다"는 자기 신고와 "무엇을 근거로 PASSED인가"를 구분하기 위한 필드다.
+  const file = fixture();
+  const result = cli(file, ['record-verification', '--status', 'PASSED', '--failed-count', '0', '--evidence', 'node -e "console.log(42)"']);
+  assert.equal(result.status, 0, result.stderr);
+  const e = parseSource(fs.readFileSync(file, 'utf8')).data.verification.evidence;
+  assert.equal(e.command, 'node -e "console.log(42)"');
+  assert.equal(e.exitCode, 0);
+  assert.match(e.outputSha256, /^[a-f0-9]{64}$/);
+  assert.equal(e.outputSha256, createHash('sha256').update('42\n').digest('hex'), '출력 해시가 실제 출력과 일치한다');
+  assert.match(e.at, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('증거가 실패를 말하는데 PASSED로 기록하면 거부한다', () => {
+  const file = fixture();
+  const result = cli(file, ['record-verification', '--status', 'PASSED', '--failed-count', '0', '--evidence', 'node -e "process.exit(3)"']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /exitCode가 0이 아닙니다/);
+  // 거부됐으므로 파일은 그대로여야 한다(모순된 기록이 남지 않는다).
+  assert.equal(parseSource(fs.readFileSync(file, 'utf8')).data.verification.status, 'PASSED');
+  assert.equal(parseSource(fs.readFileSync(file, 'utf8')).data.verification.evidence, undefined);
+});
+
+test('실패한 증거는 FAILED로는 기록된다', () => {
+  const file = fixture();
+  const result = cli(file, ['record-verification', '--status', 'FAILED', '--failed-count', '2', '--evidence', 'node -e "process.exit(3)"']);
+  assert.equal(result.status, 0, result.stderr);
+  const v = parseSource(fs.readFileSync(file, 'utf8')).data.verification;
+  assert.equal(v.status, 'FAILED');
+  assert.equal(v.evidence.exitCode, 3);
+});
+
+test('--evidence 없이도 기존처럼 기록된다(구버전 호환)', () => {
+  const file = fixture();
+  const result = cli(file, ['record-verification', '--status', 'PASSED', '--failed-count', '0']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(parseSource(fs.readFileSync(file, 'utf8')).data.verification.evidence, null);
+});
+
+test('저장은 임시 파일을 남기지 않는다(원자적 쓰기)', () => {
+  // TASK.md는 파이프라인 전체가 걸린 단일 소스라 tmp+rename으로 쓴다. 잔여 tmp가 남으면
+  // 그 자체가 실패 신호이고, 대상 저장소의 git status도 더럽힌다.
+  const file = fixture();
+  assert.equal(cli(file, ['set', 'issue=7']).status, 0);
+  const leftovers = fs.readdirSync(path.dirname(file)).filter((name) => name.includes('.tmp'));
+  assert.deepEqual(leftovers, [], `임시 파일이 남았다: ${leftovers.join(', ')}`);
+  assert.equal(parseSource(fs.readFileSync(file, 'utf8')).data.issue, 7, '내용은 정상 반영된다');
 });

@@ -1,13 +1,11 @@
 {
   "scripts": {
-    "task": "node tools/task/index.js",
-    "task:lint": "node tools/task/index.js lint",
-    "task:test": "node --test tools/task/test/*.test.js",
-    "handoff": "node tools/handoff/dispatch.js",
-    "handoff:test": "node --test tools/handoff/test/*.test.js"
+    "task": "duet-task",
+    "task:lint": "duet-task lint",
+    "handoff": "duet-handoff"
   },
   "devDependencies": {
-    "yaml": "^2.8.1"
+    "duetcode": "github:sdcomms4227/duetcode#v0.1.0"
   },
   "engines": {
     "node": ">=18"

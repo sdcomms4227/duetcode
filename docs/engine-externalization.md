@@ -1,6 +1,8 @@
 # 엔진 외부화 설계 — `tools/`를 대상 저장소에서 gitignore하기
 
-> 상태: **설계 제안(미구현)**. 착수 전 [§7 결정 필요 항목](#7-결정-필요-항목)을 먼저 확정한다.
+> 상태: **구현 완료**(§3 위치 독립화 + §4 방안 A). 이 문서는 이제 설계 제안이 아니라 **현재 구조의 근거 기록**이다.
+>
+> §7 결정은 모두 확정됐다: public 전환 완료(A 채택), 대상은 Node 저장소로 한정, 기존 `tools/` 레이아웃 지원은 대상이 1곳일 때 종료했다(잔재는 `duet-init`이 보고만 하고 지우지 않는다).
 >
 > 발단: 첫 설치 대상 저장소에서 "`tools/`는 그 저장소의 코드가 아니라 외부 도구이므로 `.omc`/`.omx`처럼 gitignore하고 싶다"는 요구. 이 문서는 그 요구를 duetcode canonical 쪽 작업으로 옮긴 것이다.
 
@@ -164,10 +166,10 @@ duetcode에 root `package.json` 신설(B6):
 
 ## 8. 완료 조건
 
-- [ ] 엔진이 `tools/`·`node_modules/duetcode/`·`.duet/engine/` **세 위치 모두**에서 동일하게 동작한다.
-- [ ] `engine/*/test/*.test.js`가 자기설치 없이 `engine/`에 직접 돈다(B5).
-- [ ] 런타임 상태·대상 설정이 엔진 디렉터리 밖에 있다(B3·B4).
-- [ ] 대상 저장소가 `/tools/`를 gitignore해도 `npm run task:lint`·`task:test`·`handoff:test`가 통과한다.
-- [ ] 대상 저장소에 **커밋되는 버전 표식**이 존재한다(lockfile 또는 `.duet.json`).
-- [ ] `TASK.md` 관련 동작은 **회귀 0** — 상태머신·lint·archive·git diff 게이트 전부 불변.
-- [ ] `CLAUDE.md`(§3.5로 Commands 절 변경)·`docs/pipeline-design.md`·`templates/*` 정합성 갱신.
+- [x] 엔진이 위치에 무관하게 동작한다 — repo root를 `DUET_REPO_ROOT` → `git rev-parse` → cwd로 **해석**하고, 형제 엔진은 `require.resolve`로 찾는다(B1·B2).
+- [x] `engine/`의 테스트가 자기설치 없이 직접 돈다(B5). 이 저장소에서 `npm test` 하나로 끝난다.
+- [x] 런타임 상태(`<root>/.duet/state/`)와 대상 설정(`.duet/verify.json`)이 엔진 밖에 있다(B3·B4).
+- [x] 대상 저장소에 엔진 사본이 **아예 생기지 않는다** — gitignore할 `tools/`가 없다.
+- [x] 커밋되는 버전 표식은 대상의 lockfile이다(B7). `duet-task --version`으로 실행 중인 엔진을 확인한다.
+- [x] `TASK.md` 관련 회귀 0 — 상태머신·lint·archive·git diff 게이트 전부 불변(task 25/25, handoff 52/52).
+- [x] `CLAUDE.md`·`README.md`·`docs/pipeline-design.md`·`templates/*`·`skills/*`·`commands/*` 정합성 갱신.

@@ -18,7 +18,7 @@
 
 ### 하이리스크 작업 (반드시 검증 게이트 통과)
 
-- `<틀리면 조용히 데이터가 깨지는 규칙들 — 예: 채번 카운터, 패딩 규칙, 매핑 규칙>`. 고속·저가 모델 단독 금지 — 상위 모델의 설계·검증을 앞뒤로 붙인다. `TASK.md`에 `highRisk: true`로 표시하면 lint가 `roles.designer`·`roles.reviewer`에 `Opus` 포함을 강제한다(`tools/task/lib.js`).
+- `<틀리면 조용히 데이터가 깨지는 규칙들 — 예: 채번 카운터, 패딩 규칙, 매핑 규칙>`. 고속·저가 모델 단독 금지 — 상위 모델의 설계·검증을 앞뒤로 붙인다. `TASK.md`에 `highRisk: true`로 표시하면 lint가 `roles.designer`·`roles.reviewer`에 `Opus` 포함을 강제한다.
 - **테스트 코드**: "테스트를 만들었다" ≠ "검증됐다". 실행 경로와 실제 실행 여부를 `TASK.md` 검증 결과에 기록한다.
 
 ## 핸드오프 계약 (Claude 설계 → Codex 구현)
@@ -47,7 +47,7 @@ Codex는 설계를 맹목적으로 구현하지 않는다. 설계가 실제 코�
 
 ## Task 상태머신
 
-TASK.md의 `Active Task`는 동시에 하나만 유지한다. 최상단 YAML front matter가 기계 판독 상태의 단일 소스이며, 본문은 요구사항·근거·검증 로그를 설명한다. 상태 변경과 lint는 `node tools/task/index.js <명령>`을 사용한다. 신규 Task는 `task start <id> --objective <목표> --requester <요청자> --designer <설계자>`로 시작한다.
+TASK.md의 `Active Task`는 동시에 하나만 유지한다. 최상단 YAML front matter가 기계 판독 상태의 단일 소스이며, 본문은 요구사항·근거·검증 로그를 설명한다. 상태 변경과 lint는 `npm run task -- <명령>`을 사용한다. 신규 Task는 `task start <id> --objective <목표> --requester <요청자> --designer <설계자>`로 시작한다.
 
 ```text
 IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
