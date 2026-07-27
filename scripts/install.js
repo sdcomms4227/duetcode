@@ -44,14 +44,44 @@ const LEGACY_SCRIPTS = {
 const log = [];
 function did(action, target) { log.push(`  [${action}] ${target}`); }
 
+// existsSync는 디렉터리에도 true다. 스크립트가 가리키는 대상은 '실행 가능한 파일'이어야 하므로
+// 파일 여부까지 확인한다.
+function isFile(p) {
+  try { return fs.statSync(p).isFile(); } catch { return false; }
+}
+
+// 스크립트 명령에서 실행 대상 경로(tools/...)를 뽑는다. 없으면 null.
+function scriptEntry(command) {
+  return (String(command).match(/(tools\/[\w./-]+)/) || [])[1] || null;
+}
+
 // --engine-only는 package.json을 건드리지 않는다는 계약이므로, 구형 스크립트를 고치지 않고 알리기만 한다.
 // 엔진만 갱신하면 그 스크립트가 더 이상 존재하지 않는 실행 형태를 가리킬 수 있다.
+// 파싱 실패를 '구형 스크립트 없음'과 구별한다. 예전에는 catch가 []를 반환해 손상된 package.json이
+// 정상으로 보였고, 필요한 마이그레이션 경고가 조용히 사라졌다.
 function staleScripts(target) {
   const pkgPath = path.join(target, 'package.json');
-  if (!fs.existsSync(pkgPath)) return [];
+  if (!fs.existsSync(pkgPath)) return { names: [], unreadable: null };
   let scripts;
-  try { scripts = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).scripts || {}; } catch { return []; }
-  return Object.entries(LEGACY_SCRIPTS).filter(([name, values]) => values.includes(scripts[name])).map(([name]) => name);
+  try { scripts = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).scripts || {}; }
+  catch (e) { return { names: [], unreadable: e.message }; }
+  return { names: Object.entries(LEGACY_SCRIPTS).filter(([name, values]) => values.includes(scripts[name])).map(([name]) => name), unreadable: null };
+}
+
+// copyDir는 기존 tools/를 --force 없이 건너뛴다. 그런데 mergePackageJson은 구형 테스트 스크립트를
+// run.js 경로로 갱신하므로, 러너가 없는 기존 설치본은 npm run task:test가 즉시 깨진다.
+// run.js는 이번에 추가된 신규 파일이라 사용자 수정본을 덮어쓸 위험이 없으므로, 없을 때만 채운다.
+function ensureEngineFile(target, relPath) {
+  const dest = path.join(target, 'tools', relPath);
+  // 이미 무언가 있으면 손대지 않는다. 파일이 아니면(디렉터리 등) 고치려 들지 말고 실패로 보고해
+  // 호출부가 마이그레이션을 보류하게 한다.
+  if (fs.existsSync(dest)) return isFile(dest);
+  const src = path.join(ENGINE, relPath);
+  if (!isFile(src)) return false;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
+  did('create', rel(dest));
+  return true;
 }
 
 function gitBranch(cwd) {
@@ -93,7 +123,14 @@ function mergePackageJson(target, handoff) {
     if (!handoff && k.startsWith('handoff')) continue;
     if (pkg.scripts[k] == null) { pkg.scripts[k] = v; did('add-script', k); }
     else if (pkg.scripts[k] === v) continue;
-    else if ((LEGACY_SCRIPTS[k] || []).includes(pkg.scripts[k])) { pkg.scripts[k] = v; did('migrate-script', k); }
+    else if ((LEGACY_SCRIPTS[k] || []).includes(pkg.scripts[k])) {
+      // 실행 대상이 실제로 있을 때만 갱신한다. 없는 파일을 가리키는 명령으로 바꾸면
+      // 구형이지만 돌아가던 스크립트를 즉시 깨진 스크립트로 만드는 셈이다.
+      const entry = scriptEntry(v);
+      if (entry && !isFile(path.join(target, entry))) {
+        conflicts.push(`scripts.${k} (구형이지만 대상 ${entry}이 없어 보류 — --force로 엔진을 갱신하세요)`);
+      } else { pkg.scripts[k] = v; did('migrate-script', k); }
+    }
     else conflicts.push(`scripts.${k} (기존: ${pkg.scripts[k]})`);
   }
   for (const [k, v] of Object.entries(snippet.devDependencies)) {
@@ -159,6 +196,13 @@ function main() {
   copyDir(path.join(ENGINE, 'task'), path.join(TARGET_ROOT, 'tools', 'task'), opts.force);
   if (opts.handoff) copyDir(path.join(ENGINE, 'handoff'), path.join(TARGET_ROOT, 'tools', 'handoff'), opts.force);
 
+  // 위 copyDir는 --force 없이는 기존 tools/를 통째로 건너뛴다. 아래 mergePackageJson이 가리킬
+  // 테스트 러너만 비파괴적으로 채워, 구형 설치본이 "명령은 새 경로인데 파일은 없는" 상태가 되지 않게 한다.
+  if (!opts.engineOnly) {
+    ensureEngineFile(TARGET_ROOT, path.join('task', 'test', 'run.js'));
+    if (opts.handoff) ensureEngineFile(TARGET_ROOT, path.join('handoff', 'test', 'run.js'));
+  }
+
   // --engine-only: 엔진(tools/)만 동기화하고 package.json·TASK.md·CI·.gitignore·docs는 건드리지 않는다.
   // 기존 설치 저장소의 엔진을 canonical 소스에서 갱신하는 용도. 갱신하려면 --force 동반 필요.
   if (opts.engineOnly) {
@@ -166,11 +210,27 @@ function main() {
     console.log('\n엔진만 동기화했습니다(package.json·TASK.md·CI·docs 미변경).'
       + (opts.force ? '' : '\n주의: --force 없이는 기존 tools/가 있으면 skip됩니다. 갱신하려면 --engine-only --force.'));
     const stale = staleScripts(TARGET_ROOT);
-    if (stale.length) {
+    if (stale.unreadable) {
+      console.log(`\n주의 — package.json을 읽지 못해 구형 스크립트를 검사하지 못했습니다: ${stale.unreadable}`);
+      console.log('  파일을 고친 뒤 다시 실행해 구형 스크립트 여부를 확인하세요.');
+    } else if (stale.names.length) {
       const wanted = JSON.parse(fs.readFileSync(path.join(TEMPLATES, 'package-json-snippet.json'), 'utf8')).scripts;
       console.log('\n주의 — package.json에 구형 스크립트가 남아 있습니다(engine-only는 package.json을 수정하지 않습니다):');
-      for (const name of stale) console.log(`  - scripts.${name}  →  ${wanted[name]}`);
-      console.log('  위 값으로 직접 바꾸거나, --engine-only 없이 다시 설치하면 이 값들만 자동 갱신됩니다.');
+      // 대상 파일이 없는데 새 값을 안내하면, 그대로 바꿨을 때 없는 파일을 가리키는 깨진 명령이 된다.
+      // 그 경우엔 값 대신 엔진을 먼저 갱신하라고 안내한다.
+      let missing = false;
+      for (const name of stale.names) {
+        const entry = scriptEntry(wanted[name]);
+        if (entry && isFile(path.join(TARGET_ROOT, entry))) {
+          console.log(`  - scripts.${name}  →  ${wanted[name]}`);
+        } else {
+          missing = true;
+          console.log(`  - scripts.${name}  (대상 ${entry}이 설치되어 있지 않아 지금 값을 바꾸면 명령이 깨집니다)`);
+        }
+      }
+      console.log(missing
+        ? '  먼저 엔진을 갖춘 뒤에 값을 바꾸세요: --engine-only --force 로 동기화하거나, --engine-only 없이(핸드오프 포함) 다시 설치하면 자동 갱신됩니다.'
+        : '  위 값으로 직접 바꾸거나, --engine-only 없이 다시 설치하면 이 값들만 자동 갱신됩니다.');
     }
     return;
   }

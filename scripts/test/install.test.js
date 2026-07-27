@@ -144,6 +144,92 @@ test('구형 테스트 스크립트는 갱신하고, 사용자가 바꾼 스크�
 	cleanup(target);
 });
 
+test('러너가 없는 구형 설치본을 재설치해도 테스트 명령이 깨지지 않는다', () => {
+	// 회귀: copyDir가 --force 없이 기존 tools/를 건너뛰는데 스크립트만 run.js 경로로 갱신해,
+	// "명령은 새 경로인데 파일은 없는" 설치본이 나왔다(npm run task:test 즉시 실패).
+	const target = mkTarget();
+	assert.equal(run(target).status, 0, '최초 설치');
+	// 구형 설치본 재현: 러너 파일 제거 + 구형 스크립트 값 복원
+	for (const rel of ['tools/task/test/run.js', 'tools/handoff/test/run.js']) {
+		fs.rmSync(path.join(target, ...rel.split('/')), { force: true });
+	}
+	const pkgPath = path.join(target, 'package.json');
+	const legacy = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+	legacy.scripts['task:test'] = 'node --test tools/task/test/*.test.js';
+	legacy.scripts['handoff:test'] = 'node --test tools/handoff/test/*.test.js';
+	fs.writeFileSync(pkgPath, JSON.stringify(legacy, null, 2) + '\n');
+
+	assert.equal(run(target).status, 0, '재설치');
+	const scripts = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).scripts;
+	for (const [name, rel] of [['task:test', 'tools/task/test/run.js'], ['handoff:test', 'tools/handoff/test/run.js']]) {
+		const entry = (scripts[name].match(/(tools\/[\w./-]+)/) || [])[1];
+		assert.ok(entry, `${name}에서 실행 대상을 찾을 수 없다: ${scripts[name]}`);
+		assert.ok(fs.existsSync(path.join(target, entry)),
+			`${name}이 존재하지 않는 ${entry}를 가리킨다(구형 설치본이 깨졌다)`);
+		assert.equal(entry, rel);
+	}
+	cleanup(target);
+});
+
+test('--no-handoff는 기존 handoff 스크립트를 건드리지 않는다', () => {
+	// --no-handoff는 handoff* 스크립트를 아예 처리하지 않고 건너뛴다("추가 안 함"이지 "제거"가 아니다).
+	const target = mkTarget();
+	fs.writeFileSync(path.join(target, 'package.json'), JSON.stringify({
+		scripts: { 'handoff:test': 'node --test tools/handoff/test/*.test.js' }
+	}, null, 2) + '\n');
+	const result = run(target, ['--no-handoff']);
+	assert.equal(result.status, 0);
+	const scripts = JSON.parse(fs.readFileSync(path.join(target, 'package.json'), 'utf8')).scripts;
+	assert.equal(scripts['handoff:test'], 'node --test tools/handoff/test/*.test.js', '기존 값 보존');
+	cleanup(target);
+});
+
+test('러너를 갖출 수 없으면 구형 스크립트를 갱신하지 않고 충돌로 보고한다', () => {
+	// 마이그레이션 가드의 실제 실패 경로: 대상 경로가 파일이 아니면 ensureEngineFile이 채우지 못하고,
+	// 구형이지만 돌아가던 값을 깨진 값으로 바꾸지 않아야 한다.
+	const target = mkTarget();
+	const legacyValue = 'node --test tools/task/test/*.test.js';
+	fs.writeFileSync(path.join(target, 'package.json'), JSON.stringify({
+		scripts: { 'task:test': legacyValue }
+	}, null, 2) + '\n');
+	fs.mkdirSync(path.join(target, 'tools', 'task', 'test', 'run.js'), { recursive: true }); // 파일이 아닌 디렉터리
+	const result = run(target, ['--no-handoff']);
+	assert.equal(result.status, 0);
+	const scripts = JSON.parse(fs.readFileSync(path.join(target, 'package.json'), 'utf8')).scripts;
+	assert.equal(scripts['task:test'], legacyValue, '대상을 갖추지 못하면 구형 값을 유지한다');
+	assert.match(result.stdout, /scripts\.task:test .*보류/, '보류 사유를 충돌로 보고한다');
+	cleanup(target);
+});
+
+test('--engine-only는 대상이 없을 때 스크립트 값을 바꾸라고 안내하지 않는다', () => {
+	// 안내대로 값만 바꾸면 없는 파일을 가리키는 깨진 명령이 된다. 엔진을 먼저 갖추라고 안내해야 한다.
+	const target = mkTarget();
+	assert.equal(run(target).status, 0, '최초 설치');
+	fs.rmSync(path.join(target, 'tools', 'task', 'test', 'run.js'), { force: true });
+	const pkgPath = path.join(target, 'package.json');
+	const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+	pkg.scripts['task:test'] = 'node --test tools/task/test/*.test.js';
+	fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+
+	const result = run(target, ['--engine-only']); // --force 없음 → tools/ skip → 러너 여전히 없음
+	assert.equal(result.status, 0);
+	assert.match(result.stdout, /설치되어 있지 않아/, '대상 부재를 알린다');
+	assert.match(result.stdout, /--engine-only --force/, '엔진을 먼저 갖추라고 안내한다');
+	assert.ok(!/→ {2}node tools\/task\/test\/run\.js/.test(result.stdout),
+		'대상이 없으면 바꿀 값을 제시하지 않는다');
+	cleanup(target);
+});
+
+test('--engine-only는 손상된 package.json을 정상으로 처리하지 않는다', () => {
+	// 회귀: catch가 []를 반환해 파싱 실패가 "구형 스크립트 없음"으로 보였고 경고가 사라졌다.
+	const target = mkTarget();
+	fs.writeFileSync(path.join(target, 'package.json'), '{ 이건 JSON이 아니다 ');
+	const result = run(target, ['--engine-only', '--force']);
+	assert.equal(result.status, 0, 'engine-only 자체는 성공한다');
+	assert.match(result.stdout, /package\.json을 읽지 못해/, '파싱 실패를 알린다');
+	cleanup(target);
+});
+
 test('.gitignore는 항목 단위로 병합하며 반복 실행에 멱등이다', () => {
 	// 회귀: 'tools/handoff/state/' 한 줄만 있으면 전체를 건너뛰어, 스니펫에 항목이 추가돼도
 	// 기존 설치 저장소에는 영영 전달되지 않았다.

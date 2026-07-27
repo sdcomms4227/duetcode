@@ -90,10 +90,10 @@ push 직후 **웹 UI에서** 처리해야 하는 것(CLI로 안 되는 항목):
 task:lint      통과
 task:test      25 / 25
 handoff:test   52 / 52
-scripts/test   13 / 13
+scripts/test   18 / 18
 ```
 
-> 개명 직후에는 22 / 49 / 7이었다. 러너 계약(0개=실패, 실패 전파, 헬퍼 제외) 3건씩과 설치기 회귀 6건(`--no-handoff` 스크립트 부재, 스크립트 무결성, 구형 스크립트 마이그레이션, `.gitignore` 항목 병합 2건, `--engine-only` 보고)을 추가한 결과다.
+> 개명 직후에는 22 / 49 / 7이었다. 러너 계약(0개=실패, 실패 전파, 헬퍼 제외) 3건씩과 설치기 회귀 11건(`--no-handoff` 스크립트 부재·기존 값 보존, 스크립트 무결성, 구형 스크립트 마이그레이션, 러너 없는 구형 설치본 업그레이드, 러너를 갖출 수 없을 때 보류, `.gitignore` 항목 병합 2건, `--engine-only` 보고·대상 부재 안내·손상된 package.json)을 추가한 결과다.
 
 재현 절차(이 저장소에는 root `package.json`이 없어 스크래치 디렉터리 설치가 필요하다):
 
@@ -131,6 +131,7 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 폐기된 glob 스크립트(`node --test tools/task/test/*.test.js`)와 `.gitignore` 신규 항목은 **`--engine-only`가 아닌 일반 재설치**에서 자동 반영된다.
 
 - `mergePackageJson`은 기존 값이 `LEGACY_SCRIPTS`의 알려진 구형 값과 정확히 일치할 때만 갱신한다(`migrate-script` 로그). 사용자가 손댄 스크립트는 건드리지 않고 충돌로 보고한다 — 그건 수동 조치 대상이다.
+- 스크립트가 가리킬 `test/run.js`는 `--force` 없이도 없을 때만 채운다(`ensureEngineFile`). `copyDir`가 기존 `tools/`를 통째로 건너뛰므로, 이게 없으면 "명령은 새 경로인데 파일은 없는" 설치본이 만들어진다. 그래도 대상을 채우지 못하면 마이그레이션 자체를 보류하고 충돌로 보고한다.
 - `appendGitignore`는 항목 단위로 병합하므로, 일부만 있는 저장소에도 빠진 항목(`node_modules/` 등)만 추가된다.
 - `--engine-only`는 `package.json`을 수정하지 않는다는 계약을 지키므로 **보고만 한다**. 엔진만 갱신한 저장소는 구형 스크립트가 그대로 남으니, 출력에 뜬 값으로 직접 바꾸거나 `--engine-only` 없이 한 번 더 설치해야 한다.
 

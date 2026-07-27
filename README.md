@@ -43,7 +43,7 @@ npm install
 node tools/task/index.js lint
 ```
 
-Options: `--no-handoff` (core only — installs no Codex handoff, and does **not** remove one already installed), `--force` (refresh the engine), `--engine-only --force` (sync only `tools/`, leaving docs / `package.json` / `TASK.md` / CI untouched — for updating an existing install from the canonical source; it reports outdated scripts instead of rewriting them). Idempotent by default: an existing `TASK.md` is left alone entirely, and `package.json` / `.gitignore` keep everything already in them — the installer only adds. Script names that already exist are reported as conflicts rather than overwritten.
+Options: `--no-handoff` (core only — installs no Codex handoff, and does **not** remove one already installed), `--force` (refresh the engine), `--engine-only --force` (sync only `tools/`, leaving docs / `package.json` / `TASK.md` / CI untouched — for updating an existing install from the canonical source; it reports outdated scripts instead of rewriting them). Idempotent by default: an existing `TASK.md` is left alone entirely, and `package.json` / `.gitignore` keep everything already in them. One narrow exception: a `task*` / `handoff*` script whose value exactly matches a known previous release's is migrated to the current one, so upgrades do not leave dead commands behind. Any other value — including anything you edited — is reported as a conflict and left untouched.
 
 Optional: to auto-lint on session end, merge `templates/stop-hook-snippet.json` into the target repo's `.claude/settings.json`.
 
