@@ -1,0 +1,15 @@
+{
+  "scripts": {
+    "task": "node tools/task/index.js",
+    "task:lint": "node tools/task/index.js lint",
+    "task:test": "node --test tools/task/test/*.test.js",
+    "handoff": "node tools/handoff/dispatch.js",
+    "handoff:test": "node --test tools/handoff/test/*.test.js"
+  },
+  "devDependencies": {
+    "yaml": "^2.8.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,5 @@
+# 모든 텍스트 파일을 워킹트리에서 LF로 정규화한다.
+# 근거: core.autocrlf=true(Git-for-Windows 기본)로 clone하면 텍스트 파일이 CRLF로 스머지되는데,
+# templates/task-lint.yml이 CRLF가 되면 scripts/install.js의 __HANDOFF_TEST__ 치환이 매치에 실패해
+# 자리표시자가 생성된 CI 워크플로에 그대로 남는다(무효 YAML). 엔진/템플릿은 LF 고정이 안전하다.
+* text=auto eol=lf

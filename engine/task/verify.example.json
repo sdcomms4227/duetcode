@@ -1,0 +1,12 @@
+{
+  "profile": "dev",
+  "baseUrl": "http://127.0.0.1:8080",
+  "credentials": {
+    "usernameEnv": "VERIFY_USERNAME",
+    "passwordEnv": "VERIFY_PASSWORD"
+  },
+  "records": {
+    "readOnlyRecordId": "replace-locally"
+  },
+  "_note": "샘플. 실제 값은 verify.local.json(gitignore 대상)에 둔다. task verify 자동 하니스는 아직 미구현(Tier 2)이며, 프로파일 화이트리스트/계정/recordId 형식은 프로젝트에 맞게 정의한다."
+}

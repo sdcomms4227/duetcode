@@ -1,0 +1,16 @@
+{
+  "_comment": "선택 사항. 대상 저장소의 .claude/settings.json 'hooks'에 병합하면, 세션 종료(Stop) 시 TASK.md가 있을 때만 task lint를 돌려 상태 파일 파손을 조기에 알린다(advisory — Stop을 막지 않음). 플러그인 전역 hook으로 두지 않는 이유: 모든 저장소의 Stop마다 발화하기 때문. 프로젝트 스코프로만 둔다.",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const fs=require('fs');if(fs.existsSync('TASK.md')){require('child_process').spawnSync(process.execPath,['tools/task/index.js','lint'],{stdio:'inherit'})}\""
+          }
+        ]
+      }
+    ]
+  }
+}

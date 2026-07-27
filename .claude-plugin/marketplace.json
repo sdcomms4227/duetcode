@@ -1,0 +1,20 @@
+{
+  "name": "duetcode",
+  "description": "duetcode — a Claude+Codex collaboration pipeline plugin marketplace",
+  "owner": {
+    "name": "sdcomms",
+    "email": "sdcomms4227@users.noreply.github.com"
+  },
+  "plugins": [
+    {
+      "name": "duetcode",
+      "source": "./",
+      "description": "TASK.md state-machine + Codex handoff pipeline, installable into any repo",
+      "homepage": "https://github.com/sdcomms4227/duetcode",
+      "repository": "https://github.com/sdcomms4227/duetcode",
+      "keywords": ["workflow", "state-machine", "handoff", "codex", "claude", "pipeline"],
+      "category": "workflow",
+      "license": "MIT"
+    }
+  ]
+}
