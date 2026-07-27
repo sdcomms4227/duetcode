@@ -1,6 +1,6 @@
 ---
 name: pipeline-install
-description: duetcode 파이프라인(TASK.md 상태머신 + Codex 핸드오프)을 현재 저장소에 설치·부트스트랩한다. 사용자가 "duetcode 설치", "이 프로젝트에 파이프라인 붙여줘", "TASK.md 워크플로 세팅" 등을 요청할 때 사용. 엔진을 tools/로 복사하고 package.json·CI·.gitignore·TASK.md·규약 문서를 멱등하게 스캐폴딩한다.
+description: duetcode 파이프라인(TASK.md 상태머신 + Codex 핸드오프)을 현재 저장소에 설치·부트스트랩한다. 사용자가 "duetcode 설치", "이 프로젝트에 파이프라인 붙여줘", "TASK.md 워크플로 세팅" 등을 요청할 때 사용. 엔진은 duetcode devDependency로 설치되고, package.json·CI·.gitignore·TASK.md·규약 문서를 멱등하게 스캐폴딩한다.
 ---
 
 # duetcode pipeline 설치
