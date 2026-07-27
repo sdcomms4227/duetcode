@@ -49,7 +49,7 @@ npm run task:lint
 
 **Upgrading:** bump the tag in `package.json` and `npm install`. Nothing else to sync.
 
-**Coming from a pre-0.2 install** (engine copied into `tools/`): re-run `npx duet-init`, then delete the leftovers it reports — the stale `tools/` directory and the now-pointless `task:test` / `handoff:test` scripts. Move anything under `tools/handoff/state/` to `.duet/state/` first if a handoff is mid-flight.
+**Coming from a pre-duetcode install** (the old `cc-symphony` layout, which copied the engine into `tools/`): re-run `npx duet-init`, then delete the leftovers it reports — the stale `tools/` directory and the now-pointless `task:test` / `handoff:test` scripts. Move anything under `tools/handoff/state/` to `.duet/state/` first if a handoff is mid-flight.
 
 Optional: to auto-lint on session end, merge `templates/stop-hook-snippet.json` into the target repo's `.claude/settings.json`.
 
