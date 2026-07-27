@@ -26,9 +26,9 @@ description: duetcode 파이프라인(TASK.md 상태머신 + Codex 핸드오프)
 
    ```bash
    npm install
-   node tools/task/index.js lint     # TASK.md(IDLE) 통과 확인
-   node --test tools/task/test/*.test.js
-   node --test tools/handoff/test/*.test.js   # 핸드오프 설치 시
+   npm run task:lint      # TASK.md(IDLE) 통과 확인
+   npm run task:test
+   npm run handoff:test   # 핸드오프 설치 시
    ```
 
 4. `docs/duetcode-collaboration-protocol.md`의 `<...>` 자리표시자(모델·기본 브랜치·불변식·언어)를 프로젝트에 맞게 채우고, 저장소의 에이전트 지침 문서(`CLAUDE.md`/`AGENTS.md`)에서 이 문서를 협업 규약 단일 소스로 참조하게 한다.
