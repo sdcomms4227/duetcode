@@ -33,8 +33,26 @@ function parseArgs(argv) {
   return opts;
 }
 
+// 과거 버전이 설치했던 스크립트 값. 기존 값이 여기에 **정확히** 일치할 때만 현재 값으로 갱신한다.
+// 사용자가 직접 손댄 스크립트는 갱신하지 않고 충돌로 보고만 한다(남의 저장소 설정을 말없이 바꾸지 않는다).
+// glob 축약형을 폐기한 이유는 engine/task/test/run.js 주석 참조.
+const LEGACY_SCRIPTS = {
+  'task:test': ['node --test tools/task/test/*.test.js'],
+  'handoff:test': ['node --test tools/handoff/test/*.test.js']
+};
+
 const log = [];
 function did(action, target) { log.push(`  [${action}] ${target}`); }
+
+// --engine-only는 package.json을 건드리지 않는다는 계약이므로, 구형 스크립트를 고치지 않고 알리기만 한다.
+// 엔진만 갱신하면 그 스크립트가 더 이상 존재하지 않는 실행 형태를 가리킬 수 있다.
+function staleScripts(target) {
+  const pkgPath = path.join(target, 'package.json');
+  if (!fs.existsSync(pkgPath)) return [];
+  let scripts;
+  try { scripts = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).scripts || {}; } catch { return []; }
+  return Object.entries(LEGACY_SCRIPTS).filter(([name, values]) => values.includes(scripts[name])).map(([name]) => name);
+}
 
 function gitBranch(cwd) {
   try {
@@ -60,7 +78,9 @@ function ensureFileFromTemplate(templatePath, destPath, transform) {
   did('create', rel(destPath));
 }
 
-function mergePackageJson(target) {
+// handoff=false면 handoff* 스크립트를 넣지 않는다: --no-handoff는 tools/handoff를 설치하지 않으므로
+// 그 스크립트는 실행 즉시 MODULE_NOT_FOUND로 죽는다(없는 명령보다 나쁜, 있어 보이는 깨진 명령).
+function mergePackageJson(target, handoff) {
   const pkgPath = path.join(target, 'package.json');
   const snippet = JSON.parse(fs.readFileSync(path.join(TEMPLATES, 'package-json-snippet.json'), 'utf8'));
   let pkg = {};
@@ -70,8 +90,11 @@ function mergePackageJson(target) {
   pkg.devDependencies = pkg.devDependencies || {};
   const conflicts = [];
   for (const [k, v] of Object.entries(snippet.scripts)) {
+    if (!handoff && k.startsWith('handoff')) continue;
     if (pkg.scripts[k] == null) { pkg.scripts[k] = v; did('add-script', k); }
-    else if (pkg.scripts[k] !== v) conflicts.push(`scripts.${k} (기존: ${pkg.scripts[k]})`);
+    else if (pkg.scripts[k] === v) continue;
+    else if ((LEGACY_SCRIPTS[k] || []).includes(pkg.scripts[k])) { pkg.scripts[k] = v; did('migrate-script', k); }
+    else conflicts.push(`scripts.${k} (기존: ${pkg.scripts[k]})`);
   }
   for (const [k, v] of Object.entries(snippet.devDependencies)) {
     if (pkg.devDependencies[k] == null) { pkg.devDependencies[k] = v; did('add-dep', `${k}@${v}`); }
@@ -82,13 +105,26 @@ function mergePackageJson(target) {
   return conflicts;
 }
 
+// 항목 단위로 병합한다. 과거에는 'tools/handoff/state/' 한 줄만 있어도 전체를 건너뛰어,
+// 스니펫에 항목이 추가돼도 기존 설치 저장소에는 영영 전달되지 않았다.
+// 패턴 바로 위의 연속 주석은 그 패턴과 함께 움직인다(이미 있는 항목의 주석을 중복 추가하지 않는다).
 function appendGitignore(target) {
   const giPath = path.join(target, '.gitignore');
   const snippet = fs.readFileSync(path.join(TEMPLATES, 'gitignore-snippet.txt'), 'utf8');
   const existing = fs.existsSync(giPath) ? fs.readFileSync(giPath, 'utf8') : '';
-  if (existing.includes('tools/handoff/state/')) { did('skip(존재)', '.gitignore'); return; }
+  const have = new Set(existing.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+  const additions = [];
+  let comments = [];
+  for (const line of snippet.split(/\r?\n/)) {
+    const value = line.trim();
+    if (!value) continue;
+    if (value.startsWith('#')) { comments.push(line); continue; }
+    if (!have.has(value)) { additions.push(...comments, line); have.add(value); }
+    comments = [];
+  }
+  if (!additions.length) { did('skip(존재)', '.gitignore'); return; }
   const sep = existing && !existing.endsWith('\n') ? '\n' : '';
-  fs.writeFileSync(giPath, existing + sep + (existing ? '\n' : '') + snippet, 'utf8');
+  fs.writeFileSync(giPath, existing + sep + (existing ? '\n' : '') + additions.join('\n') + '\n', 'utf8');
   did(existing ? 'append' : 'create', '.gitignore');
 }
 
@@ -129,11 +165,18 @@ function main() {
     console.log(log.join('\n'));
     console.log('\n엔진만 동기화했습니다(package.json·TASK.md·CI·docs 미변경).'
       + (opts.force ? '' : '\n주의: --force 없이는 기존 tools/가 있으면 skip됩니다. 갱신하려면 --engine-only --force.'));
+    const stale = staleScripts(TARGET_ROOT);
+    if (stale.length) {
+      const wanted = JSON.parse(fs.readFileSync(path.join(TEMPLATES, 'package-json-snippet.json'), 'utf8')).scripts;
+      console.log('\n주의 — package.json에 구형 스크립트가 남아 있습니다(engine-only는 package.json을 수정하지 않습니다):');
+      for (const name of stale) console.log(`  - scripts.${name}  →  ${wanted[name]}`);
+      console.log('  위 값으로 직접 바꾸거나, --engine-only 없이 다시 설치하면 이 값들만 자동 갱신됩니다.');
+    }
     return;
   }
 
   // 2. package.json 병합
-  const conflicts = mergePackageJson(TARGET_ROOT);
+  const conflicts = mergePackageJson(TARGET_ROOT, opts.handoff);
 
   // 3. TASK.md 생성(부재 시). legacy SHARE.md split-brain은 상단 preflight에서 이미 차단했다.
   const branch = gitBranch(TARGET_ROOT);
