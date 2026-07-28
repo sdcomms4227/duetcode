@@ -38,6 +38,9 @@
     "task:test": "node engine/task/test/run.js",
     "handoff:test": "node engine/handoff/test/run.js",
     "install:test": "node scripts/test/run.js",
+    "version:sync": "node scripts/sync-version.js",
+    "version:check": "node scripts/sync-version.js --check",
+    "version": "npm run version:sync",
     "test": "npm run task:test && npm run handoff:test && npm run install:test"
   },
   "dependencies": {

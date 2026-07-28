@@ -14,7 +14,7 @@ description: duetcode 파이프라인(TASK.md 상태머신 + Codex 핸드오프)
 2. 엔진을 devDependency로 걸고 부트스트랩한다.
 
    ```bash
-   npm i -D github:sdcomms4227/duetcode#v0.1.1
+   npm i -D github:sdcomms4227/duetcode#v0.1.2
    npx duet-init
    ```
 
