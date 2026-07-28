@@ -59,6 +59,24 @@ function resolveStateDir(env = process.env) {
 	return resolveFromRepo(env.HANDOFF_STATE_DIR || DEFAULT_STATE_DIR);
 }
 
+function consumeAbortRequest(stateDir, runId) {
+	const file = path.join(stateDir, 'abort');
+	let request;
+	try {
+		request = JSON.parse(fs.readFileSync(file, 'utf8'));
+	} catch (error) {
+		if (error.code === 'ENOENT' || error instanceof SyntaxError) return false;
+		throw error;
+	}
+	if (!request || request.runId !== runId) return false;
+	try {
+		fs.unlinkSync(file);
+	} catch (error) {
+		if (error.code !== 'ENOENT') throw error;
+	}
+	return true;
+}
+
 function ensureDirectory(directory) {
 	fs.mkdirSync(directory, { recursive: true });
 }
@@ -584,6 +602,7 @@ module.exports = {
 	resolveRepoRoot,
 	acquireLock,
 	clearSession,
+	consumeAbortRequest,
 	createRunDirectory,
 	ensureDirectory,
 	getSession,

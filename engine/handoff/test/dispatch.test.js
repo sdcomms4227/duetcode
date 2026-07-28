@@ -24,6 +24,15 @@ function runCodexStub() {
 		console.error(TRANSPORT_SENTINEL);
 		return;
 	}
+	if (mode === 'abort') {
+		const runsDir = path.join(process.env.HANDOFF_STATE_DIR, 'runs');
+		const runDirectory = fs.readdirSync(runsDir, { withFileTypes: true }).find((entry) => entry.isDirectory());
+		fs.writeFileSync(path.join(process.env.HANDOFF_STATE_DIR, 'abort'), JSON.stringify({
+			runId: runDirectory.name
+		}), 'utf8');
+		setInterval(() => {}, 1000);
+		return;
+	}
 	if (mode === 'benign-sentinels') {
 		// 정상 stdout이 전송 sentinel 문자열을 인용해도 transport로 오분류하면 안 된다(-o 산출물은 더 이상 없음).
 		console.log(JSON.stringify({ type: 'item.completed', item: { text: TRANSPORT_SENTINEL } }));
@@ -404,6 +413,22 @@ if (process.argv.includes('--codex-stub')) {
 		assert.equal(outcome.success, false);
 		assert.equal(outcome.exitCode, 3);
 		assert.equal(outcome.kind, 'timeout');
+	});
+
+	test('현재 run ID와 일치하는 abort 제어 파일만 실행 중 Codex를 중단한다', () => {
+		const item = fixture();
+		try {
+			const result = runDispatcher(item, [], 'abort');
+			assert.equal(result.status, 5, result.stderr + '\n' + result.stdout);
+			assert.equal(taskState(item).status, 'IMPLEMENTING');
+			const report = newestResult(item);
+			assert.equal(report.codex.aborted, true);
+			assert.equal(report.outcome.kind, 'aborted');
+			assert.equal(report.outcome.exitCode, 5);
+			assert.equal(fs.existsSync(path.join(item.stateDir, 'abort')), false);
+		} finally {
+			fs.rmSync(item.root, { recursive: true, force: true });
+		}
 	});
 
 	test('transport 판정은 유지하되 REVIEW 도달 실측을 reason에 덧붙인다', () => {

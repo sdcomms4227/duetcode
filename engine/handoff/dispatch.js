@@ -13,6 +13,7 @@ const {
 	STATE_SCHEMA_VERSION,
 	acquireLock,
 	clearSession,
+	consumeAbortRequest,
 	createRunDirectory,
 	getSession,
 	gitPorcelain,
@@ -171,9 +172,11 @@ function executeCodex(invocation, options) {
 		let artifactError = null;
 		let stdinError = null;
 		let timedOut = false;
+		let aborted = false;
 		let termination = null;
 		let settled = false;
 		let timeoutTimer = null;
+		let abortPollTimer = null;
 		let hardStopTimer = null;
 		let lastRecordedSession = null;
 
@@ -218,6 +221,7 @@ function executeCodex(invocation, options) {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeoutTimer);
+			if (abortPollTimer) clearInterval(abortPollTimer);
 			if (hardStopTimer) clearTimeout(hardStopTimer);
 			if (appendStdout(stdoutDecoder.end(), null) && stdoutBuffer) consumeLine(stdoutBuffer, null);
 			try { events.flush(); } catch (error) { artifactError = artifactError || error; }
@@ -238,6 +242,7 @@ function executeCodex(invocation, options) {
 				exitCode: code,
 				signal,
 				timedOut,
+				aborted,
 				termination,
 				spawnError: spawnError?.message || null,
 				artifactError: artifactError?.message || null,
@@ -266,6 +271,7 @@ function executeCodex(invocation, options) {
 				exitCode: null,
 				signal: null,
 				timedOut: false,
+				aborted: false,
 				termination: null,
 				spawnError: error.message,
 				artifactError: null,
@@ -315,6 +321,26 @@ function executeCodex(invocation, options) {
 				finish(null, 'TIMEOUT', child);
 			}, 5000);
 		}, options.timeoutMs);
+		abortPollTimer = setInterval(() => {
+			if (settled || termination) return;
+			let requested = false;
+			try {
+				requested = consumeAbortRequest(options.stateDir, options.runId);
+			} catch (error) {
+				recordSpawnError(new Error('중단 제어 파일 검사 실패: ' + error.message), child, 'artifact');
+				return;
+			}
+			if (!requested) return;
+			aborted = true;
+			termination = terminateProcessTree(child);
+			hardStopTimer = setTimeout(() => {
+				child.stdout.destroy();
+				child.stderr.destroy();
+				child.stdin.destroy();
+				child.unref();
+				finish(null, 'ABORTED', child);
+			}, 5000);
+		}, 250);
 		let onSpawnOk = true;
 		try {
 			options.onSpawn(child.pid);
@@ -408,6 +434,9 @@ function decideOutcome(codex, measurement, mode, sessionId, expectedTaskId) {
 	const principle = 'Codex exit code·자연어만 신뢰하지 않고 REVIEW 전환, task lint, Git 실측을 함께 판정한다.';
 	if (codex.timedOut) {
 		return { success: false, exitCode: EXIT_CODES.TIMEOUT, kind: 'timeout', reason: 'timeout: REVIEW 성공으로 해석하지 않으며 상태를 자동 전환하지 않습니다.' + progressHint(measurement), principle };
+	}
+	if (codex.aborted) {
+		return { success: false, exitCode: EXIT_CODES.INCOMPLETE, kind: 'aborted', reason: '현재 run ID와 일치하는 중단 요청으로 Codex 프로세스를 종료했습니다. 상태를 자동 전환하지 않습니다.' + progressHint(measurement), principle };
 	}
 	if (codex.parsed.transportFailure) {
 		return { success: false, exitCode: EXIT_CODES.TRANSPORT, kind: 'transport', reason: codex.parsed.transportFailure.message + progressHint(measurement), principle };
@@ -555,6 +584,7 @@ async function dispatch(options, runtime = {}) {
 			stateDir,
 			prompt,
 			timeoutMs,
+			runId: run.runId,
 			eventsFile: artifacts.events,
 			stderrFile: artifacts.stderr,
 			onSpawn(pid) {

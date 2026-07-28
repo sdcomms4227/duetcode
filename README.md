@@ -85,6 +85,8 @@ How the engine became location-independent and why it ships as a dependency: [do
 | `--high-risk-approved` | Acknowledge the `highRisk` human/Opus gate; without it a high-risk task is refused |
 | `--timeout-min N` | Cap the whole Codex run (default 30) |
 
+To stop a running dispatch, write `{"runId":"<current-run-id>"}` to `.duet/state/abort`. The current ID is the directory name under `.duet/state/runs/` (and is also recorded in that run's `metadata.json`). The dispatcher polls this file, terminates the Codex process tree only when the ID matches, consumes the matching request, and leaves the task in `IMPLEMENTING`. Missing, malformed, and stale requests do not stop a run. An accepted abort exits as `INCOMPLETE` (5) and is recorded as `outcome.kind: "aborted"`.
+
 Dispatch's own exit code says *why* a run did not complete — this is distinct from Codex's exit code:
 
 | Code | Name | Meaning |
@@ -94,7 +96,7 @@ Dispatch's own exit code says *why* a run did not complete — this is distinct 
 | 2 | `GUARD` | Refused before Codex was called: not `READY`, lock held, missing `--high-risk-approved`, bad flag, unconfirmed transition |
 | 3 | `TIMEOUT` | Killed at the cap. Never interpreted as success |
 | 4 | `TRANSPORT` | Codex could not be started or fed, or the stream reported a transport failure |
-| 5 | `INCOMPLETE` | Codex ran but the result is not a success: abnormal exit, model-reported failure, REVIEW not reached, `task lint` failed, git state unmeasurable, the Active Task changed mid-run, or no `thread_id` was captured |
+| 5 | `INCOMPLETE` | Codex ran but the result is not a success: operator abort, abnormal exit, model-reported failure, REVIEW not reached, `task lint` failed, git state unmeasurable, the Active Task changed mid-run, or no `thread_id` was captured |
 
 **Exit 0 alone is not proof of success.** Before reporting success the dispatcher measures the front-matter status, `task lint`, and `git status` — a run that exits 0 without reaching `REVIEW` is reported as `INCOMPLETE`.
 
