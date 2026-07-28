@@ -42,9 +42,39 @@ const STARTER_BODY = `(설계자가 이 아래를 새 업무 내용으로 작성
 `;
 const now = () => new Date().toISOString();
 function fail(message) { throw new Error(message); }
+// TASK.md의 front matter는 정확히 하나여야 한다. 파싱 정규식은 non-greedy라 첫 블록만 읽고 나머지를
+// 전부 본문으로 넘기며, section()도 indexOf로 첫 매치만 본다 — 그래서 문서가 통째로 복제돼도(front matter가
+// 둘이어도) 복제분은 어떤 검사도 받지 않고 lint가 초록으로 통과했다. 실제로 구현자가 JS String.replace로
+// 본문을 갈아끼우다 '$`'(매치 앞부분 전체로 치환되는 특수 토큰)를 흘려 문서가 복제된 사고가 있었고,
+// lint는 그 손상을 잡지 못했다. 여기서 "본문 안의 두 번째 front matter"를 거부해 그 구멍을 막는다.
+// 본문의 '---' 수평선은 다음 줄이 YAML 키일 때만 걸리고, 코드 펜스 안은 아예 보지 않는다(예시 YAML 오탐 방지).
+const FRONT_MATTER_KEYS = /^(id|status|objective|requester|roles|branch|designCheckpoint|issue|highRisk|verification|blocked|closure|updated)\s*:/;
+function strayFrontMatter(body) {
+  const lines = body.split(/\r?\n/);
+  let fence = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const opener = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+    if (opener) {
+      if (fence == null) fence = opener[1][0];
+      else if (opener[1][0] === fence) fence = null;
+      continue;
+    }
+    if (fence != null) continue;
+    // (1) front matter 전용 키가 열 0에 나온다 = 복제된 front matter의 잔해. 산문 항목은 '- '나 들여쓰기로
+    //     시작하므로 열 0 키는 정상 본문에 나오지 않는다. '$`' 사고처럼 여는 '---'가 앞 줄 끝에 붙어버려
+    //     구분자가 온전하지 않은 손상도 이 규칙으로 잡힌다(키는 그대로 열 0에 남는다).
+    if (FRONT_MATTER_KEYS.test(line)) return index + 1;
+    // (2) 온전한 '---' + YAML 키 = 문서가 통째로 덧붙은 형태. 본문의 '---' 수평선은 다음 줄이 키가 아니라 통과한다.
+    if (/^---\s*$/.test(line) && /^[A-Za-z_][\w-]*\s*:(\s|$)/.test(lines[index + 1] ?? '')) return index + 1;
+  }
+  return 0;
+}
 function parseSource(source) {
   const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n[\s\S]*)$/);
   if (!match) fail('TASK.md 최상단에 YAML front matter가 필요합니다.');
+  const duplicated = strayFrontMatter(match[2]);
+  if (duplicated) fail(`본문 ${duplicated}번째 줄에 두 번째 front matter가 있습니다(문서 복제 의심). TASK.md의 front matter는 하나여야 합니다 — 중복 블록과 그 아래 복제 본문을 지우고 다시 실행하세요.`);
   const doc = YAML.parseDocument(match[1], { keepSourceTokens: true, prettyErrors: true });
   if (doc.errors.length) fail(`front matter YAML 오류: ${doc.errors[0].message}`);
   return { doc, data: doc.toJS(), body: match[2] };
@@ -212,4 +242,4 @@ function resetBody(model) {
   if (idx >= 0) model.body = `${model.body.slice(0, idx + marker.length)}\n\n${STARTER_BODY}`;
   else model.body = `\n\n# TASK.md — Active Task 상태\n\n## Active Task\n\n${STARTER_BODY}`;
 }
-module.exports = { ACTIVE, TERMINAL, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment };
+module.exports = { ACTIVE, TERMINAL, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment, strayFrontMatter };
