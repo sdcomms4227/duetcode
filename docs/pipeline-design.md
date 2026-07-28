@@ -139,7 +139,7 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 - 신규: `codex exec --json -c 'sandbox_mode="workspace-write"' -`. 재개: `codex exec resume ... <SESSION_ID> -`. `-o` 파일 출력은 쓰지 않는다(강제종료 시 원문 잔존 방지) — 모델 최종 메시지는 정화된 `events.jsonl`에만 남는다. 재개 session id는 최초 JSONL `thread.started.thread_id`만 저장해 명시 사용(`--last` 미사용).
 - **성공 판정은 exit code 하나로 하지 않는다**: 종료 후 front matter status(REVIEW 도달)·`task lint`·`git status --porcelain`을 함께 실측. **REVIEW 미도달은 exit 0이어도 실패.**
 - 동시 실행 제어는 원자 lock, `(id,status,updated)` idempotency key. timeout(기본 30분)·전송 실패·helper 부재(무산출 exit 0)는 성공으로 해석하지 않고 자동 재시도·DONE 전환·rollback 없이 정지.
-- Codex에 주는 프롬프트는 commit/push/release·DONE 전환·issue-sync·record-verification·front matter 직접 편집·Task 범위 밖 변경을 **금지**한다.
+- Codex에 주는 프롬프트는 commit/push/release·DONE 전환·issue-sync·record-verification·front matter 직접 편집·Task 범위 밖 변경을 **금지**하고, 본문 편집은 문자열 치환 API 대신 해당 절 직접 수정으로 하라고 지시한다(§3의 `` $` `` 사고).
 - `Codex` 실행 파일은 `HANDOFF_CODEX_CMD` env(JSON 배열 또는 문자열)로 교체 가능. 상태는 `HANDOFF_STATE_DIR`(기본 `<repo-root>/.duet/state/`, 커밋 제외).
 
 ## 9. 검증 하니스 `task verify` (Tier 2 — 미구현)

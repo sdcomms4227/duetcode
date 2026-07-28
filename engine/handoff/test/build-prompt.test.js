@@ -80,6 +80,15 @@ test('Active Task 필수 내용과 종료·금지 계약을 prompt에 포함한�
 	}
 });
 
+test('본문을 문자열 치환으로 갈아끼우지 말라는 지침을 포함한다', () => {
+	// '$`'가 문서 앞부분 전체로 치환돼 TASK.md가 복제된 사고가 있었다. lint가 이제 손상을 잡지만,
+	// 애초에 손상을 만들지 않게 하는 건 프롬프트 몫이다.
+	const prompt = buildPrompt({ source: shareSource(), shareFile: 'fixture-TASK.md' });
+	assert.match(prompt, /문자열 치환 API로 본문을 갈아끼우지 않는다/);
+	assert.ok(prompt.includes('$`'), '특수 토큰을 구체적으로 알려야 한다');
+	assert.match(prompt, /task -- lint 로 문서가 온전한지 확인/);
+});
+
 test('필수 섹션에 미정 플레이스홀더만 남으면 위임을 거부한다', () => {
 	assert.throws(
 		() => buildPrompt({ source: shareSource('미정'), shareFile: 'fixture-TASK.md' }),
