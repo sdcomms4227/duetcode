@@ -153,6 +153,73 @@ test('StreamRedactor는 margin을 넘는 멀티라인 시크릿도 경계에서 
 	assert.match(joined, /\[REDACTED\]/);
 });
 
+test('drain은 완결된 앞부분만 내보내고 tail은 들고 있는다', () => {
+	// 예전에는 flush가 종료 시 한 번뿐이라 실행 중 events.jsonl이 계속 비어 있었고 강제종료 시 전량 유실됐다.
+	const chunks = [];
+	const redactor = new StreamRedactor((text) => chunks.push(text), {});
+	redactor.push('a\n'.repeat(20000));
+	assert.equal(redactor.drain(), true);
+	assert.ok(chunks.length > 0, '실행 중에 방출돼야 한다');
+	assert.ok(redactor.buffer.length > 0, 'margin 만큼은 남겨 둔다');
+	redactor.flush();
+	assert.equal(chunks.join('').length, 40000);
+});
+
+test('drain은 줄 경계에서만 자른다(긴 줄 안의 토큰이 쪼개지지 않는다)', () => {
+	// 자를 지점(길이-margin)이 긴 줄 한가운데로 떨어져도, 그 줄은 통째로 남겨야 토큰이 안 쪼개진다.
+	const token = 'sk-' + 'a'.repeat(40);
+	const chunks = [];
+	const redactor = new StreamRedactor((text) => chunks.push(text), {});
+	redactor.push('head\n' + 'z '.repeat(20000) + token + ' end\n' + 'tail\n');
+	redactor.drain();
+	const emitted = chunks.join('');
+	assert.ok(emitted.endsWith('\n'), '방출은 항상 줄 경계에서 끝나야 한다');
+	assert.equal(emitted.includes('sk-'), false, '토큰이 담긴 줄은 아직 방출되면 안 된다');
+	redactor.flush();
+	const joined = chunks.join('');
+	assert.equal(joined.includes(token), false, '경계에서 쪼개져 마스킹을 빠져나가면 안 된다');
+	assert.match(joined, /\[REDACTED\]/);
+});
+
+test('drain은 env 유래 멀티라인 시크릿을 경계에서 쪼개지 않는다', () => {
+	const secret = 'BIGSECRET-' + 'x\n'.repeat(9000) + '-END';
+	const chunks = [];
+	const redactor = new StreamRedactor((text) => chunks.push(text), { HUGE_SECRET_TOKEN: secret });
+	const blob = 'preamble\n' + secret + '\npostamble\n';
+	for (let index = 0; index < blob.length; index += 700) {
+		redactor.push(blob.slice(index, index + 700));
+		redactor.drain();
+	}
+	redactor.flush();
+	const joined = chunks.join('');
+	assert.equal(joined.includes(secret), false, 'drain 경계에서 시크릿이 복원되면 안 된다');
+	assert.match(joined, /\[REDACTED\]/);
+});
+
+test('drain은 닫히지 않은 PEM 블록 앞에서 멈춘다', () => {
+	// PEM은 길이 상한이 없는 유일한 멀티라인 패턴이라 margin으로 덮을 수 없다. 닫힐 때까지 들고 있어야 한다.
+	const chunks = [];
+	const redactor = new StreamRedactor((text) => chunks.push(text), {});
+	redactor.push('log line\n'.repeat(3000));
+	redactor.push('-----BEGIN RSA PRIVATE KEY-----\n' + 'KEYMATERIAL\n'.repeat(3000));
+	redactor.drain();
+	assert.equal(chunks.join('').includes('KEYMATERIAL'), false, '닫히기 전에는 방출하지 않는다');
+	redactor.push('-----END RSA PRIVATE KEY-----\n' + 'after\n'.repeat(3000));
+	redactor.drain();
+	redactor.flush();
+	const joined = chunks.join('');
+	assert.equal(joined.includes('KEYMATERIAL'), false);
+	assert.match(joined, /\[REDACTED\]/);
+	assert.match(joined, /after/);
+});
+
+test('drain도 fail-closed latch를 존중한다', () => {
+	const redactor = new StreamRedactor(() => {}, {}, 128);
+	assert.throws(() => redactor.push('y'.repeat(200)), /fail-closed/);
+	assert.throws(() => redactor.drain(), /fail-closed/);
+	assert.throws(() => redactor.flush(), /fail-closed/);
+});
+
 test('redactToFile은 raw를 정화해 최종본을 쓰고 원문 raw를 항상 제거한다', () => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'redactfile-'));
 	const raw = path.join(dir, 'last-message.raw.txt');

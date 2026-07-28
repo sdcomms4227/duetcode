@@ -505,8 +505,10 @@ function redactJsonl(line, env = process.env) {
 	return JSON.stringify(redactDeep(parsed, env));
 }
 
-// 스트리밍 로그를 안전하게 마스킹한다. 한 run의 출력을 모아 flush에서 완전한 문맥(멀티라인 포함)으로 redact하고,
-// byte 상한을 넘으면 부분 방출(경계 누출 위험) 대신 fail-closed로 잠근다(latch). redactFn으로 라인별 semantic 전략 주입.
+// 스트리밍 로그를 안전하게 마스킹한다. redact는 완전한 문맥(멀티라인 포함)에서 해야 경계 누출이 없으므로,
+// 방출은 safeCut()이 "쪼개져도 안전하다"고 보증한 지점까지만 한다(drain). flush는 남은 전부를 내보낸다.
+// 상한을 넘으면 부분 방출(경계 누출 위험) 대신 fail-closed로 잠근다(latch) — drain이 도는 동안 상한은
+// 사실상 "정화 불가능해 계속 들고 있어야 하는 양"의 한계가 된다. redactFn으로 라인별 semantic 전략 주입.
 class StreamRedactor {
 	constructor(sink, env = process.env, maxBytes = 64 * 1024 * 1024, redactFn = redactText) {
 		this.sink = sink;
@@ -516,6 +518,37 @@ class StreamRedactor {
 		this.buffer = '';
 		this.bytes = 0;
 		this.failed = false;
+		// drain()이 남겨 둘 tail 크기. env 유래 시크릿은 길이를 알 수 있으므로 가장 긴 것보다 크게 잡으면
+		// 멀티라인 시크릿이 방출 경계에서 쪼개질 수 없다. 한 번만 계산한다(push마다 env를 훑지 않도록).
+		const longest = sensitiveEnvironmentValues(env)[0];
+		this.margin = Math.max(longest ? longest.length * 2 : 0, 8 * 1024);
+	}
+	// 안전하게 방출할 수 있는 지점을 찾는다. 세 가지를 동시에 만족해야 한다.
+	// (1) 줄 경계에서만 자른다 — sk-·ghp_·JWT·Bearer 등 한 줄짜리 패턴이 쪼개지지 않는다.
+	// (2) tail을 margin만큼 남긴다 — env 유래 멀티라인 시크릿이 경계에서 복원되지 않는다.
+	// (3) 닫히지 않은 PEM 블록이 있으면 그 앞에서 멈춘다 — 길이 상한이 없는 유일한 멀티라인 패턴이라
+	//     margin으로는 못 덮는다. 닫힐 때까지 통째로 들고 있는다.
+	safeCut() {
+		const limit = this.buffer.length - this.margin;
+		if (limit <= 0) return 0;
+		let cut = this.buffer.lastIndexOf('\n', limit - 1) + 1;
+		if (cut <= 0) return 0;
+		const begin = this.buffer.lastIndexOf('-----BEGIN');
+		if (begin >= 0 && begin < cut && this.buffer.indexOf('-----END', begin) < 0) return 0;
+		return cut;
+	}
+	// 완결된 앞부분만 정화해 내보낸다. 실행 중에도 로그가 보이고, 강제종료 시 그때까지의 출력이 남는다.
+	// (예전에는 flush가 종료 시 한 번뿐이라 30분짜리 run의 events.jsonl이 끝날 때까지 비어 있었고,
+	//  강제종료되면 전량 유실됐다.)
+	drain() {
+		if (this.failed) throw new Error('StreamRedactor fail-closed: 상한 초과 후 영구 잠금 상태입니다.');
+		const cut = this.safeCut();
+		if (cut <= 0) return false;
+		const emitted = this.buffer.slice(0, cut);
+		this.buffer = this.buffer.slice(cut);
+		this.bytes = Buffer.byteLength(this.buffer, 'utf8');
+		this.sink(this.redactFn(emitted, this.env));
+		return true;
 	}
 	push(text) {
 		if (this.failed) throw new Error('StreamRedactor fail-closed: 상한 초과 후 영구 잠금 상태입니다.');

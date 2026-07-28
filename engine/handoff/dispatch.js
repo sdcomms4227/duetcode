@@ -197,6 +197,8 @@ function executeCodex(invocation, options) {
 		const consumeLine = (line, child) => {
 			try {
 				events.push(line + '\n');
+				// 완결된 앞부분을 바로 내보낸다 — 실행 중 관찰 가능하고 강제종료 시에도 그때까지의 로그가 남는다.
+				events.drain();
 				parser.push(line);
 			} catch (error) {
 				recordSpawnError(error, child, 'artifact');
@@ -287,6 +289,7 @@ function executeCodex(invocation, options) {
 				const text = stderrDecoder.write(chunk);
 				if (!text) return;
 				stderrLog.push(text);
+				stderrLog.drain();
 				parser.inspectText(stderrOverlap + text);
 				stderrOverlap = (stderrOverlap + text).slice(-256);
 			} catch (error) {
