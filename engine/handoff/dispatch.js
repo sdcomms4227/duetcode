@@ -604,7 +604,13 @@ async function dispatch(options, runtime = {}) {
 		}
 		throw error;
 	} finally {
-		releaseLock(lock);
+		// lock 파일이 손상되면 releaseLock이 STATE_INVALID를 던진다. finally에서 그대로 새어 나가면
+		// 원래 실패 원인(성공 시에는 판정 결과까지)을 덮어 INTERNAL로 뭉갠다 — 해제 실패는 경고로만 남긴다.
+		try {
+			releaseLock(lock);
+		} catch (releaseError) {
+			console.error('handoff[LOCK_RELEASE_FAILED]: lock 해제 실패(수동 정리 필요): ' + releaseError.message);
+		}
 	}
 }
 

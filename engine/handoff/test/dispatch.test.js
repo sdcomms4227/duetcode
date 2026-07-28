@@ -53,6 +53,10 @@ function runCodexStub() {
 		process.exitCode = transition.status || 1;
 		return;
 	}
+	if (mode === 'lock-corrupt') {
+		// dispatcher가 보유한 lock 파일을 실행 중에 깨뜨린다 → 해제 시 readJson이 STATE_INVALID를 던진다.
+		fs.writeFileSync(path.join(process.env.HANDOFF_STATE_DIR, 'dispatch.lock'), '{ 깨진 JSON', 'utf8');
+	}
 	console.log(JSON.stringify({ type: 'future.event', ignored: true }));
 	console.log(JSON.stringify({ type: 'turn.completed', usage: {} }));
 }
@@ -348,6 +352,22 @@ if (process.argv.includes('--codex-stub')) {
 			assert.ok(report.codex.artifactError);
 			assert.equal(report.codex.spawnError, null);
 			assert.equal(fs.existsSync(path.join(item.stateDir, 'dispatch.lock')), false);
+		} finally {
+			fs.rmSync(item.root, { recursive: true, force: true });
+		}
+	});
+
+	test('lock 해제 실패는 경고로 남기고 위임 판정 결과를 덮지 않는다', () => {
+		// finally의 releaseLock이 그대로 던지면 성공 판정도, 원래 실패 원인도 INTERNAL로 뭉개진다.
+		const item = fixture();
+		try {
+			const result = runDispatcher(item, [], 'lock-corrupt');
+			assert.equal(result.status, 0, result.stderr + '\n' + result.stdout);
+			assert.equal(taskState(item).status, 'REVIEW');
+			assert.equal(newestResult(item).outcome.kind, 'review-reached');
+			assert.match(result.stderr, /LOCK_RELEASE_FAILED/);
+			// 해제하지 못한 lock은 남는다 — 그래서 수동 정리를 경고에 명시한다.
+			assert.equal(fs.existsSync(path.join(item.stateDir, 'dispatch.lock')), true);
 		} finally {
 			fs.rmSync(item.root, { recursive: true, force: true });
 		}
