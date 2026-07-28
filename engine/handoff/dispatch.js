@@ -479,7 +479,7 @@ async function dispatch(options, runtime = {}) {
 	let artifacts = null;
 
 	try {
-		run = createRunDirectory(stateDir);
+		run = createRunDirectory(stateDir, env);
 		artifacts = artifactPaths(run.directory);
 		const lockedTask = showTask({ shareFile, env });
 		if (idempotencyKey(lockedTask) !== key) {
@@ -537,6 +537,8 @@ async function dispatch(options, runtime = {}) {
 			startedAt,
 			timeoutMs,
 			workingDirectory: REPO_ROOT,
+			// 이번 실행이 지운 과거 run 수. 조용히 사라지지 않도록 기록에 남긴다.
+			prunedRuns: run.pruned.length,
 			// 'cwd'면 git 해석에 실패해 폴백했다는 뜻이다. 잘못된 root로 조용히 동작하지 않도록 기록에 남긴다.
 			repoRootSource: REPO_ROOT_SOURCE,
 			sandboxMode: 'workspace-write',

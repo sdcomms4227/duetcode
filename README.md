@@ -135,6 +135,7 @@ Pre-`1.0.0`, breaking changes land in minor releases. Pin an exact tag if you ne
 | `HANDOFF_STATE_DIR` | `.duet/state/` | Handoff runtime state (git-ignored) |
 | `DUET_REPO_ROOT` | `git rev-parse` | Override the repo root — **`duet-handoff` only**; `duet-task` does not read it and always works from the current directory |
 | `HANDOFF_CODEX_CMD` | `codex` [^1] | Codex executable / args (JSON array allowed) |
+| `HANDOFF_RUN_RETENTION` | `20` | How many run directories under `<state>/runs/` to keep. Older ones are deleted when a new run starts |
 
 [^1]: On Windows, when this variable is unset, the installed launcher at `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` is preferred if it exists; otherwise `codex` is resolved from `PATH`.
 
@@ -143,4 +144,5 @@ Pre-`1.0.0`, breaking changes land in minor releases. Pin an exact tag if you ne
 - **Single source of truth.** `TASK.md`'s YAML front matter is the machine-readable state; the prose below is the human detail. Only one Active Task at a time.
 - **Trust model.** The enforcement (write-restricted `task set`, TTY checks, lint) is a guardrail for cooperative-but-fallible agents, not a security boundary. The last line of defense is a human reviewing `git diff TASK.md` before commit.
 - **Human gates.** Commit/push/release, high-risk work, public API / schema / security changes, secrets, and external writes (issue-sync) are never automated. The pipeline stops at `REVIEW`.
+- **Run artifacts are pruned.** Each dispatch writes its prompt, event stream, and result under `<state>/runs/<run-id>/`. Old run directories are deleted once there are more than `HANDOFF_RUN_RETENTION` of them; the count removed is recorded in the new run's `metadata.json`.
 - `task verify` (the automated HTTP smoke harness, Tier 2) is not implemented yet.

@@ -22,6 +22,7 @@ const TASK_CLI = require.resolve('../task/index.js');
 // 런타임 상태는 엔진 디렉터리 밖에 둔다. 엔진은 언제든 삭제·재설치되는 대상이므로 상태를 두면 안 된다.
 const DEFAULT_STATE_DIR = path.join(REPO_ROOT, '.duet', 'state');
 const STATE_SCHEMA_VERSION = 1;
+const DEFAULT_RUN_RETENTION = 20;
 
 const EXIT_CODES = Object.freeze({
 	SUCCESS: 0,
@@ -272,11 +273,53 @@ function releaseLock(lock) {
 	return true;
 }
 
-function createRunDirectory(stateDir) {
+// run 산출물에는 프롬프트와 모델 출력 전문이 남는다(마스킹은 하지만). 무제한 누적은 용량보다 잔존 자체가
+// 위험이므로 새 run을 만들 때 오래된 것부터 지운다. runId가 ISO 시각으로 시작해 사전순 = 시간순이다.
+// 정리 실패로 위임을 막지는 않는다(best-effort) — 지우지 못한 것은 다음 실행이 다시 시도한다.
+function runRetention(env = process.env) {
+	const raw = env.HANDOFF_RUN_RETENTION;
+	if (raw == null || raw === '') return DEFAULT_RUN_RETENTION;
+	const value = Number(raw);
+	if (!Number.isInteger(value) || value < 1) {
+		throw new HandoffError('HANDOFF_RUN_RETENTION은 1 이상의 정수여야 합니다.', {
+			code: 'RUN_RETENTION_INVALID',
+			exitCode: EXIT_CODES.GUARD
+		});
+	}
+	return value;
+}
+
+function pruneRuns(runsDirectory, keep) {
+	let entries;
+	try {
+		entries = fs.readdirSync(runsDirectory, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
+	} catch (error) {
+		if (error.code === 'ENOENT') return [];
+		throw error;
+	}
+	const removed = [];
+	for (const name of entries.slice(0, Math.max(0, entries.length - keep))) {
+		try {
+			fs.rmSync(path.join(runsDirectory, name), { recursive: true, force: true });
+			removed.push(name);
+		} catch {
+			// 삭제 실패는 다음 실행이 다시 시도한다. 위임 자체를 막지 않는다.
+		}
+	}
+	return removed;
+}
+
+function createRunDirectory(stateDir, env = process.env) {
+	const keep = runRetention(env);
 	const runId = nowIso().replace(/[:.]/g, '-') + '-' + process.pid + '-' + crypto.randomUUID().slice(0, 8);
-	const directory = path.join(stateDir, 'runs', runId);
+	const runsDirectory = path.join(stateDir, 'runs');
+	const directory = path.join(runsDirectory, runId);
 	ensureDirectory(directory);
-	return { runId, directory };
+	// 새 run을 만든 뒤에 정리한다 — 방금 만든 것이 가장 최신이라 보존 대상에 항상 포함된다.
+	return { runId, directory, pruned: pruneRuns(runsDirectory, keep) };
 }
 
 function sessionsFile(stateDir) {
@@ -495,8 +538,11 @@ class StreamRedactor {
 }
 
 module.exports = {
+	DEFAULT_RUN_RETENTION,
 	DEFAULT_STATE_DIR,
 	EXIT_CODES,
+	pruneRuns,
+	runRetention,
 	HandoffError,
 	REPO_ROOT,
 	REPO_ROOT_SOURCE,
