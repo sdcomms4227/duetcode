@@ -7,7 +7,7 @@
 
 ## 1. 게시 — **완료**
 
-`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.1.2`**.
+`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.1.3`**.
 
 > 이 절의 버전은 **손으로 갱신한다.** 자동 동기화(§8) 대상은 설치가 실제로 해석하는 참조뿐이고, 아래 경위 서술의 버전은 기록이라 치환하면 거짓이 된다.
 

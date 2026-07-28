@@ -1,6 +1,6 @@
 {
   "name": "duetcode",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "TASK.md 상태머신 + 사람 게이트 파이프라인. 대상 저장소에 devDependency로 설치해 쓴다.",
   "license": "MIT",
   "author": {
