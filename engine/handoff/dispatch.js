@@ -388,13 +388,26 @@ function measureRepository(shareFile, env) {
 	}
 }
 
+// transport·timeout은 "환경을 보증할 수 없다"는 판정이라 측정보다 앞선다. 그런데 그 exit code가 "아무 일도
+// 일어나지 않았다"로 읽히면, 실제로는 완료된 작업을 그대로 재실행해 중복 수행하게 된다. 판정은 그대로 두되
+// 실측 사실을 reason에 덧붙여, 재실행 전에 확인할 근거를 사람에게 준다(측정 자체는 result.json에 이미 있다).
+function progressHint(measurement) {
+	if (!measurement || measurement.snapshotFailed) return '';
+	if (measurement.frontMatterStatus === 'REVIEW') {
+		return ' [실측: Active Task가 이미 REVIEW다. 재실행 전에 result.json의 measurement를 확인할 것 — 작업이 끝나 있을 수 있다.]';
+	}
+	const changes = Array.isArray(measurement.gitChanges) ? measurement.gitChanges.length : 0;
+	if (changes > 0) return ' [실측: 작업 트리에 변경 ' + changes + '건이 남아 있다. 재실행 전에 확인할 것.]';
+	return '';
+}
+
 function decideOutcome(codex, measurement, mode, sessionId, expectedTaskId) {
 	const principle = 'Codex exit code·자연어만 신뢰하지 않고 REVIEW 전환, task lint, Git 실측을 함께 판정한다.';
 	if (codex.timedOut) {
-		return { success: false, exitCode: EXIT_CODES.TIMEOUT, kind: 'timeout', reason: 'timeout: REVIEW 성공으로 해석하지 않으며 상태를 자동 전환하지 않습니다.', principle };
+		return { success: false, exitCode: EXIT_CODES.TIMEOUT, kind: 'timeout', reason: 'timeout: REVIEW 성공으로 해석하지 않으며 상태를 자동 전환하지 않습니다.' + progressHint(measurement), principle };
 	}
 	if (codex.parsed.transportFailure) {
-		return { success: false, exitCode: EXIT_CODES.TRANSPORT, kind: 'transport', reason: codex.parsed.transportFailure.message, principle };
+		return { success: false, exitCode: EXIT_CODES.TRANSPORT, kind: 'transport', reason: codex.parsed.transportFailure.message + progressHint(measurement), principle };
 	}
 	if (codex.artifactError) {
 		return { success: false, exitCode: EXIT_CODES.INTERNAL, kind: 'artifact', reason: 'dispatcher 로그·상태 기록 실패(로컬 원인 우선, 모델·전송 실패 아님): ' + codex.artifactError, principle };

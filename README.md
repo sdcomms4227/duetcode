@@ -123,6 +123,9 @@ Pre-`1.0.0`, breaking changes land in minor releases. Pin an exact tag if you ne
 
 - Node.js ≥ 18 (the engine has no runtime dependency beyond `yaml`). The npm test scripts deliberately avoid shell globbing, so they behave the same under Windows `cmd.exe` and POSIX shells.
 - For handoff: the `codex` CLI (override the executable via `HANDOFF_CODEX_CMD`). Without it, the core (state machine, lint, CI) still works fully.
+- For handoff **on Windows**: Codex runs the delegated work in a sandbox (`sandbox_mode="workspace-write"`), which requires its sandbox helper to launch. A broken or missing helper does not fail Codex itself — Codex can exit 0 with a normal event stream — but the dispatcher classifies the run as `TRANSPORT` (exit 4) because the environment the work ran in cannot be vouched for. There is no preflight for this: it is only detectable once the stream reports it. Install Codex through its official Windows installer rather than copying the binary, so the helper lands beside it.
+
+> On exit 4, read `measurement` in the run's `result.json` **before re-running.** A transport failure does not mean nothing happened — the dispatcher records whether the Active Task already reached `REVIEW` and whether the working tree changed, and repeats those facts in the failure reason. Re-running blindly can duplicate finished work.
 
 ## Environment variables
 

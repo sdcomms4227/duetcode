@@ -406,6 +406,30 @@ if (process.argv.includes('--codex-stub')) {
 		assert.equal(outcome.kind, 'timeout');
 	});
 
+	test('transport 판정은 유지하되 REVIEW 도달 실측을 reason에 덧붙인다', () => {
+		// helper 기동 실패는 환경을 보증할 수 없으므로 exit 4가 맞다. 다만 exit 4를 "아무 일도 없었다"로 읽고
+		// 그대로 재실행하면 이미 끝난 작업을 중복 수행한다 — 사람이 확인할 근거를 판정문에 남긴다.
+		const codex = { timedOut: false, parsed: { transportFailure: { message: 'orchestrator helper 기동 실패' }, modelFailure: null }, spawnError: null, artifactError: null, stdinError: null, exitCode: 0, signal: null };
+		const measurement = { frontMatterStatus: 'REVIEW', frontMatterTaskId: 'dispatch-fixture', taskShowExitCode: 0, taskLintExitCode: 0, gitStatusExitCode: 0, gitChanges: [] };
+		const outcome = decideOutcome(codex, measurement, 'new', SESSION_ID, 'dispatch-fixture');
+		assert.equal(outcome.exitCode, 4);
+		assert.equal(outcome.kind, 'transport');
+		assert.match(outcome.reason, /orchestrator helper 기동 실패/);
+		assert.match(outcome.reason, /이미 REVIEW/);
+	});
+
+	test('REVIEW에 못 갔지만 작업 트리가 변한 transport 실패도 재실행 전 확인을 알린다', () => {
+		const codex = { timedOut: false, parsed: { transportFailure: { message: '전송 실패' }, modelFailure: null }, spawnError: null, artifactError: null, stdinError: null, exitCode: 0, signal: null };
+		const measurement = { frontMatterStatus: 'IMPLEMENTING', taskShowExitCode: 0, taskLintExitCode: 0, gitStatusExitCode: 0, gitChanges: [' M engine/task/lib.js'] };
+		assert.match(decideOutcome(codex, measurement, 'new', SESSION_ID, 'dispatch-fixture').reason, /변경 1건/);
+	});
+
+	test('진행 흔적이 없으면 transport reason에 군더더기를 붙이지 않는다', () => {
+		const codex = { timedOut: false, parsed: { transportFailure: { message: '전송 실패' }, modelFailure: null }, spawnError: null, artifactError: null, stdinError: null, exitCode: 0, signal: null };
+		const measurement = { frontMatterStatus: 'IMPLEMENTING', taskShowExitCode: 0, taskLintExitCode: 0, gitStatusExitCode: 0, gitChanges: [] };
+		assert.equal(decideOutcome(codex, measurement, 'new', SESSION_ID, 'dispatch-fixture').reason, '전송 실패');
+	});
+
 	test('다른 Task ID의 REVIEW는 이 위임의 성공으로 인정하지 않는다(task-changed)', () => {
 		const codex = { timedOut: false, parsed: { transportFailure: null, modelFailure: null }, spawnError: null, stdinError: null, exitCode: 0, signal: null };
 		const measurement = { frontMatterStatus: 'REVIEW', frontMatterTaskId: 'other-task', taskLintExitCode: 0, gitStatusExitCode: 0 };

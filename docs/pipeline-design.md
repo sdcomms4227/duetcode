@@ -140,6 +140,7 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 - **성공 판정은 exit code 하나로 하지 않는다**: 종료 후 front matter status(REVIEW 도달)·`task lint`·`git status --porcelain`을 함께 실측. **REVIEW 미도달은 exit 0이어도 실패.**
 - 동시 실행 제어는 원자 lock, `(id,status,updated)` idempotency key. timeout(기본 30분)·전송 실패·helper 부재(무산출 exit 0)는 성공으로 해석하지 않고 자동 재시도·DONE 전환·rollback 없이 정지.
 - Codex에 주는 프롬프트는 commit/push/release·DONE 전환·issue-sync·record-verification·front matter 직접 편집·Task 범위 밖 변경을 **금지**하고, 본문 편집은 문자열 치환 API 대신 해당 절 직접 수정으로 하라고 지시한다(§3의 `` $` `` 사고).
+- **transport·timeout 판정은 실측보다 앞서지만, 실측 사실을 판정문에 덧붙인다.** helper 기동 실패는 "작업이 어떤 환경에서 돌았는지 보증할 수 없다"는 뜻이라 exit 4가 맞다. 다만 그 코드가 "아무 일도 없었다"로 읽혀 그대로 재실행하면 이미 끝난 작업을 중복 수행한다. 그래서 REVIEW 도달 여부·작업 트리 변경 건수를 reason에 남긴다 — 판정은 보수적으로, 사람의 다음 판단은 사실에 근거하도록.
 - `Codex` 실행 파일은 `HANDOFF_CODEX_CMD` env(JSON 배열 또는 문자열)로 교체 가능. 상태는 `HANDOFF_STATE_DIR`(기본 `<repo-root>/.duet/state/`, 커밋 제외).
 
 ## 9. 검증 하니스 `task verify` (Tier 2 — 미구현)
