@@ -116,9 +116,18 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 | `task record-verification --status <S> --failed-count <N>` | 검증 결과 수동 기록(REVIEW 전용) |
 | `task archive <ref>` | closure.archiveRef 설정 |
 | `task approve-partial` | PARTIAL→DONE 사람 승인(TTY) |
-| `task issue-sync` | Issue 코멘트(수동 전용, 외부 쓰기) |
+| `task issue-sync` | Issue 코멘트(수동 전용, 외부 쓰기). §7.1 |
 
 - **lint 밖**: 전환 이력 검증(사람 직접 편집은 커밋 전 사람 리뷰가 최종 방어선). **대상 CI는 `task lint`만 실행**한다(엔진 테스트는 duetcode 저장소에서 돈다).
+
+### 7.1 `issue-sync` — 유일한 비가역 외부 쓰기
+
+다른 명령은 "명령 수행 → lint → save" 순서를 공유하지만, 이 명령만 **lint를 gh 호출보다 앞에 둔다.** 공통 lint는 게시 뒤에 돌기 때문에, 무효한 상태가 이미 Issue에 올라간 다음에야 걸린다 — 그 게시는 되돌릴 수 없다.
+
+코멘트는 매번 새로 달지 않고 **본문 첫 줄의 마커 `<!-- duetcode:issue-sync <task-id> -->`로 기존 것을 찾아 갱신(upsert)** 한다. 게시에 성공하고 `save()`가 실패하면 `closure.archiveRef`가 남지 않아 재실행하게 되는데, 그때 코멘트가 또 달리면 Issue가 같은 Task로 도배되기 때문이다. 파생 규칙 둘:
+
+- 기존 코멘트 **목록 조회에 실패하면 게시하지 않는다**(fail-closed). 중복 여부를 확인하지 못한 채 올리면 중복을 막을 방법이 없다.
+- 같은 Task의 마커가 **2개 이상이면 거부**하고 사람에게 넘긴다. 임의로 하나만 갱신하면 나머지가 낡은 채 남아 Issue가 서로 모순된 내용을 갖는다.
 
 ## 8. 핸드오프 오케스트레이션 (`duet-handoff`)
 

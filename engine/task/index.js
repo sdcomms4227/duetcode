@@ -2,7 +2,7 @@
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const { ACTIVE, TERMINAL, EMPTY_VERIFICATION, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, resetBody } = require('./lib');
+const { ACTIVE, TERMINAL, EMPTY_VERIFICATION, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, resetBody, syncIssueComment } = require('./lib');
 const option = (args, name) => { const i = args.indexOf(name); return i < 0 ? null : args[i + 1]; };
 const required = (value, usage) => { if (value == null || value === '') fail(`사용법: ${usage}`); return value; };
 // key별로 형변환을 제한한다: issue만 정수, highRisk만 boolean으로 coerce하고, 나머지 식별자 필드
@@ -69,7 +69,9 @@ function main(args = process.argv.slice(2)) {
     if (!['PASSED', 'FAILED', 'PARTIAL'].includes(status) || !Number.isInteger(count) || count < 0) fail('검증 결과 인자가 유효하지 않습니다.');
     // --evidence <명령>: 그 명령을 실제로 실행해 exit code와 출력 해시를 남긴다. 문자열만 받아 적으면
     // "테스트를 돌렸다"는 자기 신고에 지나지 않으므로, 무엇을 근거로 PASSED인지가 기록되지 않는다.
-    const evidenceCommand = option(args, '--evidence');
+    // 플래그를 줬으면 값도 반드시 있어야 한다. option()은 값이 없으면 undefined를 돌려주므로,
+    // 존재 여부를 값으로 판정하면 '--evidence' 오타 하나가 증거 없는 PASSED를 무음으로 통과시킨다.
+    const evidenceCommand = args.includes('--evidence') ? required(option(args, '--evidence'), usage) : null;
     let evidence = null;
     if (evidenceCommand != null) {
       if (!evidenceCommand.trim()) fail('--evidence에는 실행할 명령이 필요합니다.');
@@ -96,8 +98,12 @@ function main(args = process.argv.slice(2)) {
     const ref = required(args[0], 'task archive <ref>'); verifyArchiveRef(model, ref); set(model, 'closure.archiveRef', ref);
   } else if (command === 'issue-sync') {
     const issue = get(model, 'issue'); if (!Number.isInteger(issue)) fail('front matter issue 번호가 필요합니다.');
-    const data = model.doc.toJS(); const body = `Task: ${data.id}\nStatus: ${data.status}\nVerification: ${JSON.stringify(data.verification)}\nClosure: ${JSON.stringify(data.closure)}`;
-    execFileSync('gh', ['issue', 'comment', String(issue), '--body', body], { stdio: 'inherit' }); if (['CANCELLED', 'SUPERSEDED'].includes(data.status)) set(model, 'closure.archiveRef', `issue:#${issue}`);
+    // 외부 쓰기 전에 검증한다. 공통 lint는 아래(102행)라 gh 호출보다 늦고, 그때는 이미 게시된 뒤다.
+    lint(model);
+    const data = model.doc.toJS();
+    const result = syncIssueComment(data, issue, args => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'] }));
+    console.log(`issue #${issue} 동기화 코멘트를 ${result.action === 'updated' ? '갱신했습니다' : '등록했습니다'}.`);
+    if (['CANCELLED', 'SUPERSEDED'].includes(data.status)) set(model, 'closure.archiveRef', `issue:#${issue}`);
   } else fail('명령: show|start|set|block|unblock|cancel|supersede|reset|record-verification|archive|approve-partial|lint|issue-sync|--version');
   lint(model);
   save(model);

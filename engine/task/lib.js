@@ -154,6 +154,37 @@ function transition(model, target, checkpoint) {
   }
   set(model, 'status', target);
 }
+// issue-sync는 이 CLI의 유일한 비가역 외부 쓰기다. 그래서 다른 명령과 두 가지가 다르다.
+// (1) 호출자는 gh를 부르기 전에 validate를 통과시켜야 한다 — 공통 lint는 gh 호출보다 뒤라서, 무효한 상태가
+//     이미 Issue에 게시된 뒤에야 걸렸다(되돌릴 수 없다). 검증은 외부 쓰기보다 앞이어야 한다.
+// (2) 코멘트를 무조건 새로 달지 않고 마커로 기존 것을 찾아 갱신한다. 게시 성공 후 save()가 실패하면
+//     archiveRef가 남지 않아 재실행하게 되는데, 그때 새 코멘트가 또 달리면 같은 Task로 Issue가 도배된다.
+const issueSyncMarker = id => `<!-- duetcode:issue-sync ${id} -->`;
+function issueSyncBody(data) {
+  return [issueSyncMarker(data.id), `Task: ${data.id}`, `Status: ${data.status}`, `Verification: ${JSON.stringify(data.verification)}`, `Closure: ${JSON.stringify(data.closure)}`].join('\n');
+}
+function findIssueSyncComment(listed, id) {
+  let comments;
+  try { comments = JSON.parse(listed); } catch { fail('기존 코멘트 목록을 해석하지 못해 중복 게시를 피할 수 없습니다.'); }
+  if (!Array.isArray(comments)) fail('기존 코멘트 목록이 배열이 아닙니다.');
+  const marker = issueSyncMarker(id);
+  const found = comments.filter(comment => typeof comment?.body === 'string' && comment.body.includes(marker));
+  // 여러 개면 갱신 대상이 모호하다. 임의로 하나를 고르면 나머지는 낡은 상태로 남아 Issue가 서로 모순된 내용을 갖는다.
+  if (found.length > 1) fail(`이 Task의 동기화 코멘트가 ${found.length}개입니다. 사람이 정리한 뒤 다시 실행하세요.`);
+  return found[0] ?? null;
+}
+// gh(args) → stdout 문자열. 실패는 던진다(호출자가 처리). 목록 조회 실패 시 새로 달지 않는 fail-closed다 —
+// 기존 코멘트를 확인하지 못한 채 게시하면 중복을 막을 수 없기 때문이다.
+function syncIssueComment(data, issue, gh) {
+  const body = issueSyncBody(data);
+  const existing = findIssueSyncComment(gh(['api', `repos/{owner}/{repo}/issues/${issue}/comments`, '--paginate']), data.id);
+  if (existing) {
+    gh(['api', `repos/{owner}/{repo}/issues/comments/${existing.id}`, '-X', 'PATCH', '-f', `body=${body}`]);
+    return { action: 'updated', id: existing.id };
+  }
+  gh(['issue', 'comment', String(issue), '--body', body]);
+  return { action: 'created', id: null };
+}
 const snapshot = d => ({ id: d.id, status: d.status, type: d.closure?.type, reason: d.closure?.reason, replacementId: d.closure?.replacementId ?? null });
 const same = (a, b) => JSON.stringify(snapshot(a)) === JSON.stringify(snapshot(b));
 function verifyArchiveRef(model, ref) {
@@ -181,4 +212,4 @@ function resetBody(model) {
   if (idx >= 0) model.body = `${model.body.slice(0, idx + marker.length)}\n\n${STARTER_BODY}`;
   else model.body = `\n\n# TASK.md — Active Task 상태\n\n## Active Task\n\n${STARTER_BODY}`;
 }
-module.exports = { ACTIVE, TERMINAL, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody };
+module.exports = { ACTIVE, TERMINAL, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment };

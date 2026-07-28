@@ -216,6 +216,17 @@ test('--evidence 없이도 기존처럼 기록된다(구버전 호환)', () => {
   assert.equal(parseSource(fs.readFileSync(file, 'utf8')).data.verification.evidence, null);
 });
 
+test('값 없는 --evidence는 증거 없이 통과시키지 않고 거부한다', () => {
+  // 증거 기록은 "테스트를 돌렸다"는 자기 신고를 막는 장치다. 플래그 오타 하나로 그 장치가
+  // 무음으로 꺼지면(증거 없는 PASSED가 기록되면) 장치가 있으나 마나다.
+  const file = fixture();
+  const before = fs.readFileSync(file, 'utf8');
+  const result = cli(file, ['record-verification', '--status', 'PASSED', '--failed-count', '0', '--evidence']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /사용법/);
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+});
+
 test('저장은 임시 파일을 남기지 않는다(원자적 쓰기)', () => {
   // TASK.md는 파이프라인 전체가 걸린 단일 소스라 tmp+rename으로 쓴다. 잔여 tmp가 남으면
   // 그 자체가 실패 신호이고, 대상 저장소의 git status도 더럽힌다.
