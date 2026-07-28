@@ -7,14 +7,16 @@
 
 ## 1. 게시 — **완료**
 
-`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.1.1`**.
+`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.1.2`**.
+
+> 이 절의 버전은 **손으로 갱신한다.** 자동 동기화(§8) 대상은 설치가 실제로 해석하는 참조뿐이고, 아래 경위 서술의 버전은 기록이라 치환하면 거짓이 된다.
 
 - [x] author 이메일 noreply 확인
 - [x] public 저장소 생성 + push
 - [x] Secret scanning — **기본 활성이었다**. public 저장소는 켤 필요가 없었고, 아래 push 차단이 그 증거다
 - [x] Push protection — 동일하게 기본 활성
 - [x] 구 `cc-symphony` archive(§4)
-- [x] 실설치 스모크 테스트 — `github:sdcomms4227/duetcode#v0.1.1`
+- [x] 실설치 스모크 테스트 — 당시 `github:sdcomms4227/duetcode#v0.1.1`로 검증했다
 
 > **`gh` 활성 계정 주의.** 이 머신에는 `sdcomms4227`과 `mwlee-showtech`가 함께 로그인되어 있고, 작업 중 **활성 계정이 두 번 후자로 되돌아갔다**(두 번째는 push가 403). remote URL에 사용자를 박아 두었지만(`https://sdcomms4227@github.com/...`), push 전에 `gh auth status`로 확인하는 편이 안전하다.
 
@@ -89,9 +91,9 @@
 | 플러그인·저장소명 | `duetcode` | `duet` 단독은 음악 앱과 섞여 기각 |
 | 슬래시 커맨드 | `/duetcode:task`, `/duetcode:handoff` | |
 | 로컬 상태 디렉터리 | `.duet/` | 구현 완료(`state/`, `verify.json`) |
-| repo root 오버라이드 env | `DUET_REPO_ROOT` | 구현 완료 |
+| repo root 오버라이드 env | `DUET_REPO_ROOT` | 구현 완료 — `duet-handoff` 한정(task CLI는 cwd 기준) |
 | bin 이름 | `duet-task`, `duet-handoff`, `duet-init` | 구현 완료 |
-| 버전 | `0.1.0` | 신규 저장소이므로 초기화 (구 저장소는 `0.1.1`이었다) |
+| 초기 버전 | `0.1.0` | 신규 저장소이므로 초기화 (구 저장소는 `0.1.1`이었다). 현재 버전은 `package.json`이 단일 소스다 — 이 표에서 찾지 말 것 |
 
 `HANDOFF_STATE_DIR`·`TASK_STATE_FILE`·`HANDOFF_CODEX_CMD`는 **일부러 개명하지 않았다.** 이미 동작 중인 공개 인터페이스라 바꾸면 기존 설치 대상에 breaking change다. 통일하고 싶으면 구 이름을 경고와 함께 한동안 인식하는 유예 기간이 필요하다.
 
@@ -116,12 +118,12 @@
 task:lint      통과
 task:test      30 / 30
 handoff:test   52 / 52
-scripts/test   16 / 16
+scripts/test   22 / 22
 ```
 
 > 이 저장소에서 `npm test` 하나로 전부 돈다(엔진 외부화 이후 자기설치 절차가 사라졌다).
 
-> 개명 직후에는 22 / 49 / 7이었다. 러너 계약 3건씩과 부트스트랩 회귀가 더해졌고, 엔진 외부화로 설치기 테스트가 새 계약(엔진 미복사·duet-* 스크립트·잔재 보고)에 맞게 재작성되면서 16으로 정리됐다.
+> 개명 직후에는 22 / 49 / 7이었다. 러너 계약 3건씩과 부트스트랩 회귀가 더해졌고, 엔진 외부화로 설치기 테스트가 새 계약(엔진 미복사·duet-* 스크립트·잔재 보고)에 맞게 재작성되면서 16으로 정리됐다. 이후 `package-meta` 회귀 1건과 버전 동기화(§8) 5건이 더해져 22가 됐다.
 
 재현 절차:
 
@@ -185,4 +187,17 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 
 §7 결정은 확정됐다: 대상은 Node 저장소로 한정(방안 A 유지), 기존 `tools/` 레이아웃 지원은 종료(잔재는 `duet-init`이 보고만 한다).
 
-남은 것은 §1의 게시 절차뿐이다. 게시 후 태그(`v0.1.0`)를 붙여야 대상 저장소의 `github:` 스펙이 해석된다 — 태그 없이는 설치가 실패한다.
+§1의 게시 절차도 끝났다(`v0.1.2`까지 태그 게시 완료). 대상 저장소의 `github:` 스펙은 태그를 해석하므로 새 버전에도 태그가 필요하다.
+
+## 8. 버전 참조 동기화
+
+`v0.1.2` 릴리스 뒤 설치 참조가 `#v0.1.1`에 남은 문제를 막기 위해, `scripts/sync-version.js`가 `package.json`을 기준으로 README·설치 스킬·설치 스니펫·`.claude-plugin/plugin.json`의 버전을 맞춘다.
+
+```bash
+npm run version:sync    # 맞춘다
+npm run version:check   # 안 고치고, 어긋나 있으면 exit 1
+```
+
+버전은 `npm version <newversion> --no-git-tag-version`으로 올린다. `version` 라이프사이클이 참조를 동기화하지만 커밋과 태그는 만들지 않는다. 변경을 검토한 사람이 별도로 커밋·태그·푸시한다. `npm test`는 참조 드리프트를 실패로 잡는다.
+
+릴리스 기록의 과거 버전과 `docs/engine-externalization.md`의 설계 예시는 동기화하지 않는다. 대상 파일의 구조가 바뀌어 패턴이 맞지 않으면 스크립트는 실패한다.

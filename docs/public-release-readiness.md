@@ -135,7 +135,7 @@
 - [x] **신규 public 저장소 `duetcode` 생성 + 초기 커밋**
 - [x] Secret scanning + push protection(§5-3) — public 저장소 기본 활성이라 별도 조치 불필요. 첫 push가 GH013으로 막힌 것이 그 증거이며, 대응은 [release-checklist.md §1](release-checklist.md)에 기록
 - [x] 구 `cc-symphony` 저장소 archive + 이관 안내(§4)
-- [x] 릴리스 태그 — `v0.1.0` 게시 후 배포본 문서 누락이 발견되어 **`v0.1.1`이 최신**이다. 대상의 `github:` 스펙은 `#v0.1.1`을 가리킨다
+- [x] 릴리스 태그 — `v0.1.0` 게시 후 배포본 문서 누락이 발견되어 `v0.1.1`을 냈고, 이후 `v0.1.2`까지 게시됐다. 대상의 `github:` 스펙이 가리키는 값은 이제 `scripts/sync-version.js`가 `package.json`에 맞춰 유지한다([release-checklist.md §8](release-checklist.md)) — 최신 버전을 이 문서에서 찾지 말 것
 - [x] 실설치 스모크 테스트 — 태그 해석·부트스트랩·`duet-task --version`·lint 확인
 
 **전환 완료.** 이 문서는 이제 사전 검토 계획이 아니라 **수행 기록**이다.

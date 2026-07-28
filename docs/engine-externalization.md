@@ -69,7 +69,9 @@
 
 ### 3.6 버전 표식 (B7)
 
-엔진이 자기 버전을 보고할 수 있어야 한다(`task --version`). 소스는 `.claude-plugin/plugin.json`의 `version`(현재 `0.1.0`)을 단일 소스로 삼는다. 방안 A를 택하면 신설 `package.json`과 **버전이 갈라지지 않도록** 한쪽에서 읽어 쓰거나 릴리스 스크립트가 동기화한다.
+엔진이 자기 버전을 보고할 수 있어야 한다(`task --version`). 방안 A를 택하면 신설 `package.json`과 `.claude-plugin/plugin.json`의 **버전이 갈라지지 않도록** 한쪽에서 읽어 쓰거나 릴리스 스크립트가 동기화한다.
+
+> **구현 결과**: 단일 소스는 `package.json`의 `version`이 됐다(`engine/task/index.js`의 `--version`이 그것을 읽는다). `.claude-plugin/plugin.json`은 소스가 아니라 동기화 대상이며, `scripts/sync-version.js`가 설치 스펙들과 함께 맞춘다 — [release-checklist.md §8](release-checklist.md).
 
 ## 4. 2단계 — 배포 방식 (택일)
 
@@ -166,7 +168,7 @@ duetcode에 root `package.json` 신설(B6):
 
 ## 8. 완료 조건
 
-- [x] 엔진이 위치에 무관하게 동작한다 — repo root를 `DUET_REPO_ROOT` → `git rev-parse` → cwd로 **해석**하고, 형제 엔진은 `require.resolve`로 찾는다(B1·B2).
+- [x] 엔진이 위치에 무관하게 동작한다 — repo root를 `DUET_REPO_ROOT` → `git rev-parse` → cwd로 **해석**하고, 형제 엔진은 `require.resolve`로 찾는다(B1·B2). 단, §3.1의 해석기는 **handoff에만** 들어갔다. task CLI는 repo root 개념 없이 `TASK.md`를 cwd 기준으로 열며 `DUET_REPO_ROOT`를 읽지 않는다 — 위치 추론(B1)은 handoff의 결함이었으므로 목표는 충족하지만, 하위 디렉터리에서 `duet-task`를 부르면 저장소의 `TASK.md`를 찾지 못한다.
 - [x] `engine/`의 테스트가 자기설치 없이 직접 돈다(B5). 이 저장소에서 `npm test` 하나로 끝난다.
 - [x] 런타임 상태(`<root>/.duet/state/`)와 대상 설정(`.duet/verify.json`)이 엔진 밖에 있다(B3·B4).
 - [x] 대상 저장소에 엔진 사본이 **아예 생기지 않는다** — gitignore할 `tools/`가 없다.

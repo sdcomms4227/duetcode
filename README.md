@@ -39,7 +39,7 @@ Installing the plugin gives you the `/duetcode:task` and `/duetcode:handoff` com
 
 ```bash
 cd /path/to/your-repo
-npm i -D github:sdcomms4227/duetcode#v0.1.1
+npm i -D github:sdcomms4227/duetcode#v0.1.2
 npx duet-init          # bootstraps TASK.md, docs, CI, .gitignore entries
 npm install
 npm run task:lint
@@ -73,7 +73,7 @@ State machine: `IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE`,
 
 Human gates and verification rules: see the `duetcode:pipeline` skill / [docs/pipeline-design.md](docs/pipeline-design.md) / [docs/pipeline-workflow-example.md](docs/pipeline-workflow-example.md).
 
-How the engine became location-independent and why it ships as a dependency: [docs/engine-externalization.md](docs/engine-externalization.md). Security review for the public release: [docs/public-release-readiness.md](docs/public-release-readiness.md). Naming rationale, remaining release steps, and migration notes for repos installed from the previous name: [docs/release-checklist.md](docs/release-checklist.md).
+How the engine became location-independent and why it ships as a dependency: [docs/engine-externalization.md](docs/engine-externalization.md). Security review for the public release: [docs/public-release-readiness.md](docs/public-release-readiness.md). Naming rationale, release record, and migration notes for repos installed from the previous name: [docs/release-checklist.md](docs/release-checklist.md).
 
 ## Handoff
 
@@ -128,9 +128,9 @@ Pre-`1.0.0`, breaking changes land in minor releases. Pin an exact tag if you ne
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TASK_STATE_FILE` | `TASK.md` | Override the state-file path |
+| `TASK_STATE_FILE` | `TASK.md` | Override the state-file path. A relative value is resolved against the repo root by `duet-handoff`, but against the current directory by `duet-task` |
 | `HANDOFF_STATE_DIR` | `.duet/state/` | Handoff runtime state (git-ignored) |
-| `DUET_REPO_ROOT` | `git rev-parse` | Override the repo root the engine operates on |
+| `DUET_REPO_ROOT` | `git rev-parse` | Override the repo root — **`duet-handoff` only**; `duet-task` does not read it and always works from the current directory |
 | `HANDOFF_CODEX_CMD` | `codex` [^1] | Codex executable / args (JSON array allowed) |
 
 [^1]: On Windows, when this variable is unset, the installed launcher at `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` is preferred if it exists; otherwise `codex` is resolved from `PATH`.

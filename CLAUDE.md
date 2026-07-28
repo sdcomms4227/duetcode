@@ -6,7 +6,7 @@ This file is the single source of repository instructions for coding agents work
 
 duetcode is an **npm package and a Claude Code plugin**, not an app. It ships a state-machine + human-gate pipeline (`engine/`) that target repos install as a devDependency and invoke through the `duet-task` / `duet-handoff` binaries. `scripts/install.js` (`duet-init`) no longer copies the engine — it only bootstraps what the *target* repo owns: `TASK.md`, protocol docs, CI, and `.gitignore` entries.
 
-The engine is location-independent: it resolves the repo root explicitly (`DUET_REPO_ROOT` → `git rev-parse` → cwd) rather than inferring it from its own path, so it behaves identically under `node_modules/`, a checkout, or anywhere else.
+Neither engine infers anything from its own path, so both behave identically under `node_modules/`, a checkout, or anywhere else — but they anchor differently, and the difference is load-bearing. `engine/handoff/lib.js` resolves a repo root explicitly (`DUET_REPO_ROOT` → `git rev-parse --show-toplevel` → cwd) and resolves `TASK.md` and `.duet/state/` against it. The task CLI has no repo-root concept at all: `engine/task/index.js` loads `process.env.TASK_STATE_FILE || 'TASK.md'` **relative to cwd** and ignores `DUET_REPO_ROOT`. So `duet-task` run from a subdirectory does not find the repo's `TASK.md`, while `duet-handoff` does. Anything documenting `DUET_REPO_ROOT` must say handoff, not "the engine".
 
 Two engines live under `engine/`, installed as separate directories but **not** mutually independent:
 - `engine/task/` — the `TASK.md` state-machine CLI (`index.js` + `lib.js`). Standalone; `--no-handoff` installs this alone.
@@ -23,7 +23,11 @@ npm run task:test   # node engine/task/test/run.js
 npm run handoff:test
 npm run install:test
 npm run task:lint   # validates this repo's TASK.md, if one exists
+npm run version:sync   # align version references with package.json
+npm run version:check  # same, read-only: exits 1 on drift
 ```
+
+`package.json`'s `version` is the source for the install specs in `README.md`, `skills/pipeline-install/SKILL.md`, and `templates/package-json-snippet.json`, and for `.claude-plugin/plugin.json`. `scripts/sync-version.js` keeps them aligned; `scripts/test/version-sync.test.js` catches drift. Historical versions in release records are intentionally excluded. Bump with `npm version <newversion> --no-git-tag-version` — the `version` lifecycle syncs the references but must not commit or tag, because committing and tagging a release is a human gate.
 
 Test scripts name files explicitly instead of globbing — `test/run.js` enumerates `*.test.js` itself. Both shorthands behave differently across shells and Node versions (measured): a glob is expanded by POSIX shells but not by `cmd.exe`, which is what Windows' npm uses, so the literal pattern reaches Node — and Node only expands globs from v21, leaving v18/20 to fail with `Could not find`. A directory argument diverges the other way: v18/20 recurse into it, v22 tries to load the path as a module and dies with `MODULE_NOT_FOUND`. Enumerating files removes every one of those branches.
 
@@ -96,7 +100,7 @@ The installer intentionally uses **only Node built-ins** (no `yaml` import) beca
 
 `engine/task/` and `engine/handoff/` are the runtime sources and the only copy that exists — target repos consume them from `node_modules`, so there is no generated duplicate to keep in sync any more. Bootstrap logic and its tests live in `scripts/install.js` and `scripts/test/`. Plugin commands are in `commands/`, reusable workflow instructions in `skills/`, generated-file sources in `templates/`, and design references in `docs/`. Update the canonical engine or template rather than a temporary installation artifact.
 
-Three docs are worth reading before specific kinds of change: `docs/pipeline-design.md` is the precise spec for the state machine, verification, and gates — consult it before altering any rule, and keep it in sync when you do. `docs/engine-externalization.md` is an accepted but unimplemented plan to make the engine location-independent; read it before touching path assumptions such as `REPO_ROOT` or `TASK_CLI`. `docs/release-checklist.md` tracks the remaining public-release steps and known migration traps.
+Three docs are worth reading before specific kinds of change: `docs/pipeline-design.md` is the precise spec for the state machine, verification, and gates — consult it before altering any rule, and keep it in sync when you do. `docs/engine-externalization.md` is the implemented design behind the engine's location independence and its shipping as a dependency — it records why `REPO_ROOT` and `TASK_CLI` resolve the way they do, so read it before touching those path assumptions. `docs/release-checklist.md` records the release and known migration traps.
 
 ### Coding style and naming
 

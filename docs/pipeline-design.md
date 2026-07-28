@@ -38,7 +38,7 @@
 | `branch` | string | 항상 |
 | `designCheckpoint` | commit SHA 또는 문자열 | READY+ 필수. REVIEW→READY 시 재입력 강제 |
 | `issue` | number 또는 `null` | 선택 |
-| `highRisk` | bool(기본 false) | 항상. **true면 designer·reviewer에 `Opus` 포함 필수** |
+| `highRisk` | bool(기본 false) | 항상. **true면 `roles.designer`에 항상, `roles.reviewer`에는 READY부터 `Opus` 포함 필수** |
 | `verification` | 객체(§5) 또는 `null` | REVIEW부터 객체 필수(`status:null` 허용) |
 | `blocked` | 객체 또는 `null` | BLOCKED일 때만 객체 |
 | `closure` | 객체 또는 `null` | CANCELLED·SUPERSEDED일 때만 객체 |
