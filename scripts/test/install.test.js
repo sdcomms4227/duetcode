@@ -176,6 +176,72 @@ test('.gitignore가 없거나 비어 있어도 스니펫 항목이 모두 들어
 	}
 });
 
+test('배포본 원본이 없으면 대상을 전혀 건드리지 않고 실패한다', () => {
+	// v0.1.0에서 package.json의 files에 docs가 빠져 문서 2개가 배포본에 없었다. 그때 존재 검사가
+	// 마지막 단계에 있어서 package.json·TASK.md·CI·.gitignore가 이미 쓰인 뒤에 실패했다.
+	// 결함 있는 배포본을 실제로 만들어(문서 하나를 뺀 패키지 사본) preflight가 쓰기 이전에 막는지 본다.
+	const pkgRoot = path.join(os.tmpdir(), `duet-pkg-${process.pid}-${counter++}`);
+	const target = mkTarget();
+	try {
+		for (const dir of ['scripts', 'templates', 'docs']) {
+			fs.cpSync(path.resolve(__dirname, '..', '..', dir), path.join(pkgRoot, dir), { recursive: true });
+		}
+		fs.rmSync(path.join(pkgRoot, 'docs', 'pipeline-design.md'));
+		const before = fs.readdirSync(target).sort();
+		const result = spawnSync(process.execPath, [path.join(pkgRoot, 'scripts', 'install.js'), '--target', target], { encoding: 'utf8' });
+
+		assert.notEqual(result.status, 0, 'exit code는 0이 아니어야 한다');
+		assert.match(result.stderr, /docs\/pipeline-design\.md/, '어떤 원본이 없는지 알린다');
+		assert.match(result.stderr, /files/, 'package.json files 확인을 안내한다');
+		assert.deepEqual(fs.readdirSync(target).sort(), before, '실패 시 대상 디렉터리 내용이 변하지 않아야 한다');
+		assert.ok(!fs.existsSync(path.join(target, 'package.json')), 'package.json 미생성');
+	} finally {
+		cleanup(pkgRoot);
+		cleanup(target);
+	}
+});
+
+test('추가할 것이 없는 재실행은 package.json을 건드리지 않는다', () => {
+	// 무조건 JSON.stringify로 다시 쓰면 대상이 다른 들여쓰기를 쓸 때 재실행만으로 전체가 재포맷된다.
+	// 설치기는 "추가만" 하는 도구이므로 추가할 것이 없으면 파일이 그대로여야 한다.
+	const target = mkTarget();
+	try {
+		assert.equal(run(target).status, 0);
+		const pkgPath = path.join(target, 'package.json');
+		// 대상이 4-space를 쓰는 상황을 만든다(내용은 그대로, 형식만 다르게).
+		const reformatted = JSON.stringify(JSON.parse(fs.readFileSync(pkgPath, 'utf8')), null, 4) + '\n';
+		fs.writeFileSync(pkgPath, reformatted);
+
+		const result = run(target);
+		assert.equal(result.status, 0);
+		assert.equal(fs.readFileSync(pkgPath, 'utf8'), reformatted, '사용자 들여쓰기를 조용히 갈아엎지 않는다');
+		assert.match(result.stdout, /skip\(변경 없음\)/, '건드리지 않았다는 사실을 알린다');
+	} finally {
+		cleanup(target);
+	}
+});
+
+test('설치가 임시 파일을 남기지 않는다', () => {
+	// 대상 파일은 temp→rename으로 쓴다. 중간 산출물이 남으면 대상 저장소가 오염된다.
+	const target = mkTarget();
+	try {
+		assert.equal(run(target).status, 0);
+		// readdirSync의 recursive 옵션은 Node 18에서 지원이 갈리므로 직접 순회한다(CI 매트릭스가 18을 돈다).
+		const strays = [];
+		const walk = (dir) => {
+			for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+				const full = path.join(dir, entry.name);
+				if (entry.isDirectory()) walk(full);
+				else if (entry.name.endsWith('.tmp')) strays.push(path.relative(target, full));
+			}
+		};
+		walk(target);
+		assert.deepEqual(strays, [], '임시 파일이 남으면 안 된다');
+	} finally {
+		cleanup(target);
+	}
+});
+
 test('TASK.md는 IDLE 상태로 생성되고 재실행 시 보존된다', () => {
 	const target = mkTarget();
 	assert.equal(run(target).status, 0);

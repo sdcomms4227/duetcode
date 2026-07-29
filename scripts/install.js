@@ -68,12 +68,26 @@ function gitBranch(cwd) {
   } catch { return 'main'; }
 }
 
+// 대상 저장소 파일은 임시 파일에 쓴 뒤 rename한다. 이 저장소는 TASK.md(save)와 핸드오프 상태(writeJson)를
+// 이미 그렇게 다루는데, 정작 남의 저장소 package.json만 직접 덮어쓰고 있었다 — 쓰기 도중 죽으면
+// 대상의 package.json이 반쯤 쓰인 채 남아 그 저장소의 npm 명령이 전부 막힌다.
+function writeFileAtomic(destPath, content) {
+  const temporary = `${destPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, content, 'utf8');
+    fs.renameSync(temporary, destPath);
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch { /* 실패한 임시 파일 정리는 best-effort */ }
+    throw error;
+  }
+}
+
 function ensureFileFromTemplate(templatePath, destPath, transform) {
   if (fs.existsSync(destPath)) { did('skip(존재)', rel(destPath)); return; }
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
   let content = fs.readFileSync(templatePath, 'utf8');
   if (transform) content = transform(content);
-  fs.writeFileSync(destPath, content, 'utf8');
+  writeFileAtomic(destPath, content);
   did('create', rel(destPath));
 }
 
@@ -88,19 +102,26 @@ function mergePackageJson(target, handoff) {
   pkg.scripts = pkg.scripts || {};
   pkg.devDependencies = pkg.devDependencies || {};
   const conflicts = [];
+  let added = false;
   for (const [k, v] of Object.entries(snippet.scripts)) {
     if (!handoff && k.startsWith('handoff')) continue;
-    if (pkg.scripts[k] == null) { pkg.scripts[k] = v; did('add-script', k); }
+    if (pkg.scripts[k] == null) { pkg.scripts[k] = v; did('add-script', k); added = true; }
     else if (pkg.scripts[k] === v) continue;
-    else if ((LEGACY_SCRIPTS[k] || []).includes(pkg.scripts[k])) { pkg.scripts[k] = v; did('migrate-script', k); }
+    else if ((LEGACY_SCRIPTS[k] || []).includes(pkg.scripts[k])) { pkg.scripts[k] = v; did('migrate-script', k); added = true; }
     else conflicts.push(`scripts.${k} (기존: ${pkg.scripts[k]})`);
   }
   for (const [k, v] of Object.entries(snippet.devDependencies)) {
-    if (pkg.devDependencies[k] == null) { pkg.devDependencies[k] = v; did('add-dep', `${k}@${v}`); }
+    if (pkg.devDependencies[k] == null) { pkg.devDependencies[k] = v; did('add-dep', `${k}@${v}`); added = true; }
   }
-  if (!pkg.engines) pkg.engines = snippet.engines;
-  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
-  did(existed ? 'merge' : 'create', 'package.json');
+  if (!pkg.engines) { pkg.engines = snippet.engines; added = true; }
+  // 실제로 무언가 추가했을 때만 쓴다. 내용 비교가 아니라 "추가했는가"로 판정하는 이유는, 대상이 다른
+  // 들여쓰기를 쓰고 있으면 내용이 같아도 직렬화 결과가 달라 매번 재포맷 diff가 나기 때문이다.
+  // 설치기는 "추가만" 하는 도구이므로, 추가할 것이 없는 재실행은 파일을 건드리지 않아야 한다.
+  if (existed && !added) did('skip(변경 없음)', 'package.json');
+  else {
+    writeFileAtomic(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+    did(existed ? 'merge' : 'create', 'package.json');
+  }
   return { conflicts, obsolete: OBSOLETE_SCRIPTS.filter((name) => pkg.scripts[name] != null) };
 }
 
@@ -123,7 +144,7 @@ function appendGitignore(target) {
   }
   if (!additions.length) { did('skip(존재)', '.gitignore'); return; }
   const sep = existing && !existing.endsWith('\n') ? '\n' : '';
-  fs.writeFileSync(giPath, existing + sep + (existing ? '\n' : '') + additions.join('\n') + '\n', 'utf8');
+  writeFileAtomic(giPath, existing + sep + (existing ? '\n' : '') + additions.join('\n') + '\n');
   did(existing ? 'append' : 'create', '.gitignore');
 }
 
@@ -141,6 +162,13 @@ function main() {
   const taskPath = path.join(TARGET_ROOT, 'TASK.md');
   if (!fs.existsSync(taskPath) && fs.existsSync(path.join(TARGET_ROOT, 'SHARE.md'))) {
     throw new Error('legacy SHARE.md가 있고 TASK.md가 없습니다. `git mv SHARE.md TASK.md`로 리네임한 뒤 다시 실행하세요(상태 분열 방지).');
+  }
+  // preflight: 배포본 원본이 전부 있는지 먼저 확인한다. 예전에는 문서 존재 검사가 마지막 단계에 있어서,
+  // files 누락 같은 배포 결함(v0.1.0에서 실제 발생)이 나면 package.json·TASK.md·CI·.gitignore가 이미
+  // 쓰인 뒤에 실패해 대상이 어중간한 상태로 남았다. 순수한 존재 검사라 쓰기 전에 할 수 있다.
+  const missing = PACKAGE_SOURCES.filter((source) => !fs.existsSync(path.join(PACKAGE_ROOT, source)));
+  if (missing.length) {
+    throw new Error(`배포본에 원본이 없습니다: ${missing.join(', ')} (package.json의 files 확인 필요). 대상 저장소는 건드리지 않았습니다.`);
   }
 
   console.log(`duetcode 부트스트랩 → ${TARGET_ROOT}${opts.handoff ? '' : ' (코어만, 핸드오프 제외)'}\n`);
@@ -164,12 +192,11 @@ function main() {
 
   // 5. 규약·설계·예시 문서
   ensureFileFromTemplate(path.join(TEMPLATES, 'collaboration-protocol.md'), path.join(TARGET_ROOT, 'docs', 'duetcode-collaboration-protocol.md'));
-  // 원본이 없으면 조용히 건너뛰지 않는다. 예전에는 존재 검사로 넘겨서, package.json의 files에
-  // docs가 빠진 배포본이 문서 2개를 말없이 누락한 채 "완료"로 끝났다(v0.1.0에서 실제 발생).
+  // 원본 부재는 위 preflight가 이미 걸렀다(PACKAGE_SOURCES). 예전에는 여기서 존재 검사로 넘겨서,
+  // package.json의 files에 docs가 빠진 배포본이 문서 2개를 말없이 누락한 채 "완료"로 끝났다
+  // (v0.1.0에서 실제 발생). 검사를 없앤 것이 아니라 쓰기 이전으로 옮긴 것이다.
   for (const [src, dest] of [['pipeline-design.md', 'duetcode-pipeline-design.md'], ['pipeline-workflow-example.md', 'duetcode-pipeline-workflow-example.md']]) {
-    const source = path.join(DOCS, src);
-    if (!fs.existsSync(source)) throw new Error(`배포본에 문서가 없습니다: docs/${src} (package.json files 확인 필요)`);
-    ensureFileFromTemplate(source, path.join(TARGET_ROOT, 'docs', dest));
+    ensureFileFromTemplate(path.join(DOCS, src), path.join(TARGET_ROOT, 'docs', dest));
   }
 
   // 요약
