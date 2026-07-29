@@ -571,6 +571,8 @@ async function dispatch(options, runtime = {}) {
 			workingDirectory: REPO_ROOT,
 			// 이번 실행이 지운 과거 run 수. 조용히 사라지지 않도록 기록에 남긴다.
 			prunedRuns: run.pruned.length,
+			// 이전 run을 겨냥한 채 남아 있던 중단 요청을 걷어냈는지. 요청이 왜 안 먹었는지 추적할 근거다.
+			staleAbortCleared: run.staleAbortCleared,
 			// 'cwd'면 git 해석에 실패해 폴백했다는 뜻이다. 잘못된 root로 조용히 동작하지 않도록 기록에 남긴다.
 			repoRootSource: REPO_ROOT_SOURCE,
 			sandboxMode: 'workspace-write',

@@ -77,6 +77,21 @@ function consumeAbortRequest(stateDir, runId) {
 	return true;
 }
 
+// 중단 요청은 실행 중인 run을 겨냥해 runId로 놓인다. 그래서 새 run이 시작되는 시점에 남아 있는 abort 파일은
+// 정의상 stale이다 — 대상 run이 이미 끝났거나(요청이 늦었거나) 요청자가 runId를 잘못 적은 것이다.
+// consumeAbortRequest는 runId가 다르면 false만 돌려주고 파일을 남기므로, 지우는 주체가 없으면 그 파일은
+// 영구히 남아 이후 모든 run이 250ms마다 읽기만 하는 쓰레기가 된다. dispatch는 lock을 쥔 뒤에 새 run을 만들기
+// 때문에, 이 시점에 다른 run을 겨냥한 유효한 요청이 존재할 수 없다 — 여기서 지우는 것이 안전하다.
+function clearStaleAbort(stateDir) {
+	try {
+		fs.unlinkSync(path.join(stateDir, 'abort'));
+		return true;
+	} catch (error) {
+		if (error.code === 'ENOENT') return false;
+		throw error;
+	}
+}
+
 function ensureDirectory(directory) {
 	fs.mkdirSync(directory, { recursive: true });
 }
@@ -336,8 +351,10 @@ function createRunDirectory(stateDir, env = process.env) {
 	const runsDirectory = path.join(stateDir, 'runs');
 	const directory = path.join(runsDirectory, runId);
 	ensureDirectory(directory);
+	// 이전 run을 겨냥한 채 남은 중단 요청을 먼저 걷어낸다(있었다는 사실은 metadata에 남긴다).
+	const staleAbortCleared = clearStaleAbort(stateDir);
 	// 새 run을 만든 뒤에 정리한다 — 방금 만든 것이 가장 최신이라 보존 대상에 항상 포함된다.
-	return { runId, directory, pruned: pruneRuns(runsDirectory, keep) };
+	return { runId, directory, pruned: pruneRuns(runsDirectory, keep), staleAbortCleared };
 }
 
 function sessionsFile(stateDir) {
@@ -602,6 +619,7 @@ module.exports = {
 	resolveRepoRoot,
 	acquireLock,
 	clearSession,
+	clearStaleAbort,
 	consumeAbortRequest,
 	createRunDirectory,
 	ensureDirectory,
