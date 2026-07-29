@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # 엔진은 대상 저장소의 devDependency로 돌아간다 — 지원 범위(engines: >=18) 전체에서 통과해야 한다.
+  # 특히 test/run.js가 파일을 직접 열거하는 이유가 Node 18/20/22 간 글로브·디렉터리 인자 처리 차이라서,
+  # 그 회귀는 버전 매트릭스가 없으면 잡히지 않는다. Windows는 taskkill 프로세스 트리 종료와
+  # LOCALAPPDATA codex 런처 탐색 경로가 있어 별도로 돌린다.
+  test:
+    name: test (node ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: ['18', '20', '22', '24']
+        include:
+          - os: windows-latest
+            node: '20'
+          - os: windows-latest
+            node: '22'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  # package.json이 버전의 단일 소스다. README·SKILL.md·템플릿·plugin.json이 어긋난 채 병합되면
+  # 설치 안내가 존재하지 않는 버전을 가리키게 된다.
+  version:
+    name: version sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run version:check
