@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
-const { parseSource } = require('../task/lib');
+const { parseSource, meaningfulContent } = require('../task/lib');
 const { EXIT_CODES, HandoffError, REPO_ROOT, resolveShareFile } = require('./lib');
 
 const ACTIVE_TASK_SECTIONS = [
@@ -11,15 +11,12 @@ const ACTIVE_TASK_SECTIONS = [
 	'확정된 설계와 미확정 사항'
 ];
 
-// task validate의 meaningful()과 동일 판정: 불릿에서 '- '와 '**label**:'를 걷어낸 값이 모두
-// placeholder(없음/미정/TODO/-)면 미완성으로 본다. 그러지 않으면 resume 경로(전환-검증 생략)에서
-// 'TODO'/'없음' 같은 미완성 설계로도 Codex가 실행될 수 있다(두 게이트의 placeholder 규칙 불일치).
-const PLACEHOLDER_VALUES = new Set(['미정', '없음', 'TODO', '-']);
+// 판정은 task lint(validate → meaningful)와 **같은 함수**를 쓴다. 그러지 않으면 resume 경로에서
+// 'TODO'/'없음' 같은 미완성 설계로 Codex가 실행될 수 있고, 무엇보다 규칙이 두 벌이면 한쪽만 고쳤을 때
+// 조용히 갈린다 — 실제로 갈려 있었다. 자체 구현은 불릿 아닌 아무 줄이나 값으로 인정해서, 불릿 없는
+// 산문 섹션을 build-prompt는 통과시키고 lint는 거부했다.
 function sectionIsPlaceholder(content) {
-	const meaningful = content.split(/\r?\n/)
-		.map((line) => line.replace(/^\s*[-*]\s*/, '').replace(/^\*\*[^*]+\*\*:\s*/, '').trim())
-		.filter((value) => value && !PLACEHOLDER_VALUES.has(value));
-	return meaningful.length === 0;
+	return !meaningfulContent(content);
 }
 
 function extractSection(body, title) {

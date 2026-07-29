@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildPrompt } = require('../build-prompt');
+const { buildPrompt, sectionIsPlaceholder } = require('../build-prompt');
+const { meaningful } = require('../../task/lib');
 
 function shareSource(sectionValue = '구현 완료 조건과 구체 요구사항') {
 	return [
@@ -114,4 +115,38 @@ test('커스텀 상태 파일 경로를 프롬프트 표기에 반영한다', ()
 test('상태 파일이 저장소 밖이면 절대경로로 표기한다', () => {
 	const prompt = buildPrompt({ source: shareSource(), shareFile: '../outside/TASK.md' });
 	assert.ok(prompt.includes('/outside/TASK.md'), '저장소 밖 경로는 절대경로로 프롬프트에 표기되어야 한다');
+});
+
+test('placeholder 판정이 task lint와 정확히 일치한다', () => {
+	// 규칙이 두 벌이던 시절 실제로 갈려 있었다: 불릿 없는 산문 섹션을 build-prompt는 통과시키고
+	// lint는 거부했다. 두 게이트가 같은 함수를 보도록 묶었으니, 대표 입력에서 판정이 어긋나면 실패한다.
+	const cases = [
+		'- 실제 요구사항',
+		'- **확정**: 실제 값',
+		'- 미정',
+		'- 없음',
+		'- TODO',
+		'- -',
+		'불릿 없이 산문만 적은 섹션',
+		'- 미정\n- 실제 값',
+		''
+	];
+	for (const content of cases) {
+		const body = `### 요구사항과 완료 조건\n\n${content}\n`;
+		assert.equal(
+			sectionIsPlaceholder(content),
+			!meaningful(body, '요구사항과 완료 조건'),
+			`판정 불일치: ${JSON.stringify(content)}`
+		);
+	}
+});
+
+test('불릿 없는 산문 섹션은 두 게이트 모두 거부한다', () => {
+	// 위 일치 검사가 "둘 다 통과"로 만족되지 않도록, 갈렸던 그 입력의 방향을 못박는다.
+	const prose = '요구사항을 불릿 없이 산문으로만 적었다';
+	assert.equal(sectionIsPlaceholder(prose), true);
+	// 픽스처는 값 앞에 '- '를 붙이므로, 불릿째로 걷어내야 산문만 남은 섹션이 된다.
+	const source = shareSource().replace('- 구현 완료 조건과 구체 요구사항', prose);
+	assert.ok(source.includes(`\n${prose}\n`), '픽스처에서 불릿이 제거되어야 한다');
+	assert.throws(() => buildPrompt({ source }), /미정입니다/);
 });

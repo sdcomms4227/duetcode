@@ -131,13 +131,27 @@ function save(model) {
 const get = (model, key) => model.doc.getIn(key.split('.'));
 const set = (model, key, value) => model.doc.setIn(key.split('.'), value);
 function git(args) { return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
-const blank = value => value == null || (typeof value === 'string' && (!value.trim() || ['없음', '미정', 'TODO', '-'].includes(value.trim())));
+// 설계가 아직 안 채워졌다고 볼 자리표시자. lint(meaningful)와 핸드오프 프롬프트 조립이 같은 목록을
+// 봐야 한다 — 목록이 두 벌이면 한쪽만 고쳤을 때 두 게이트의 판정이 조용히 갈린다.
+const PLACEHOLDER_VALUES = ['없음', '미정', 'TODO', '-'];
+const blank = value => value == null || (typeof value === 'string' && (!value.trim() || PLACEHOLDER_VALUES.includes(value.trim())));
 const iso = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value));
 function section(body, title) {
   const start = body.indexOf(`### ${title}`); if (start < 0) return '';
   const rest = body.slice(start + title.length + 4); const end = rest.search(/\r?\n### /); return end < 0 ? rest : rest.slice(0, end);
 }
-function meaningful(body, title) { return section(body, title).split(/\r?\n/).some(line => { if (!/^\s*[-*]\s+/.test(line)) return false; const v = line.replace(/^\s*[-*]\s*/, '').replace(/^\*\*[^*]+\*\*:\s*/, '').trim(); return v && !['없음', '미정', 'TODO', '-'].includes(v); }); }
+// 섹션 본문 하나가 실제 내용을 담고 있는지 판정한다. 불릿(- / *)만 값으로 인정하고, '- ' 와
+// '**라벨**:' 를 걷어낸 나머지가 자리표시자면 비어 있는 것으로 본다.
+// handoff의 build-prompt가 이 함수를 그대로 쓴다 — 예전에는 각자 구현이라 실제로 판정이 달랐다
+// (불릿 없는 산문 섹션을 build-prompt는 통과시키고 lint는 거부했다).
+function meaningfulContent(content) {
+  return content.split(/\r?\n/).some(line => {
+    if (!/^\s*[-*]\s+/.test(line)) return false;
+    const v = line.replace(/^\s*[-*]\s*/, '').replace(/^\*\*[^*]+\*\*:\s*/, '').trim();
+    return v && !PLACEHOLDER_VALUES.includes(v);
+  });
+}
+function meaningful(body, title) { return meaningfulContent(section(body, title)); }
 function labelled(body, label) {
   const line = section(body, 'Review와 다음 행동').split(/\r?\n/).find(value => new RegExp(`^\\s*[-*]\\s+\\*\\*${label}\\*\\*:`).test(value));
   if (!line) return false;
@@ -275,4 +289,4 @@ function resetBody(model) {
   if (idx >= 0) model.body = `${model.body.slice(0, idx + marker.length)}\n\n${STARTER_BODY}`;
   else model.body = `\n\n# TASK.md — Active Task 상태\n\n## Active Task\n\n${STARTER_BODY}`;
 }
-module.exports = { ACTIVE, TERMINAL, resolveRepoRoot, resolveTaskFile, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment, strayFrontMatter };
+module.exports = { ACTIVE, TERMINAL, resolveRepoRoot, resolveTaskFile, PLACEHOLDER_VALUES, meaningfulContent, meaningful, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment, strayFrontMatter };
