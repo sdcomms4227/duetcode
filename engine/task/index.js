@@ -21,7 +21,10 @@ function requireCleanShare(model) {
   if (status) fail('현재 종결 상태의 TASK.md를 먼저 커밋해야 reset할 수 있습니다.');
 }
 function main(args = process.argv.slice(2)) {
-  const command = args.shift();
+  // 인자 없이 부르면 show다. /duetcode:task 슬래시 커맨드가 인자 없는 호출을 "현재 상태 보기"로
+  // 문서화하고 있는데 CLI는 exit 1로 실패했다 — 문서가 약속한 계약을 CLI가 지키지 않았다.
+  // 오타는 빈 문자열이 아니므로 여전히 알 수 없는 명령으로 거부된다.
+  const command = args.shift() || 'show';
   // 버전 조회는 TASK.md 없이도 동작해야 한다(설치 검증·버전 확인 용도). load()보다 먼저 처리한다.
   // 단일 소스는 package.json — plugin.json과의 일치는 scripts/test/package-meta.test.js가 강제한다.
   if (command === '--version' || command === '-v') return console.log(require('../../package.json').version);

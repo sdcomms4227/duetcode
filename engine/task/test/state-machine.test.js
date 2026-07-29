@@ -236,3 +236,15 @@ test('저장은 임시 파일을 남기지 않는다(원자적 쓰기)', () => {
   assert.deepEqual(leftovers, [], `임시 파일이 남았다: ${leftovers.join(', ')}`);
   assert.equal(parseSource(fs.readFileSync(file, 'utf8')).data.issue, 7, '내용은 정상 반영된다');
 });
+
+test('인자 없이 부르면 show다(슬래시 커맨드가 문서화한 계약)', () => {
+  // /duetcode:task는 "인자가 없으면 show로 현재 상태를 보여준다"고 약속하는데 CLI는 exit 1이었다.
+  const file = fixture();
+  const bare = cli(file, []);
+  assert.equal(bare.status, 0, bare.stderr);
+  assert.equal(JSON.parse(bare.stdout).id, 'task-test');
+  // 오타는 여전히 거부된다 — 기본값이 알 수 없는 명령을 삼키면 안 된다.
+  const typo = cli(file, ['shwo']);
+  assert.equal(typo.status, 1);
+  assert.match(typo.stderr, /명령:/);
+});

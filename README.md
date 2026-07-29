@@ -133,11 +133,13 @@ Pre-`1.0.0`, breaking changes land in minor releases. Pin an exact tag if you ne
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TASK_STATE_FILE` | `TASK.md` | Override the state-file path. A relative value is resolved against the repo root by `duet-handoff`, but against the current directory by `duet-task` |
+| `TASK_STATE_FILE` | see note | Override the state-file path. A relative value is resolved against the repo root by `duet-handoff`, but against the current directory by `duet-task` |
 | `HANDOFF_STATE_DIR` | `.duet/state/` | Handoff runtime state (git-ignored) |
-| `DUET_REPO_ROOT` | `git rev-parse` | Override the repo root — **`duet-handoff` only**; `duet-task` does not read it and always works from the current directory |
+| `DUET_REPO_ROOT` | `git rev-parse` | Override the repo root. Both binaries read it — `duet-handoff` anchors `TASK.md` and `.duet/state/` to it, `duet-task` falls back to it when the current directory has no `TASK.md` |
 | `HANDOFF_CODEX_CMD` | `codex` [^1] | Codex executable / args (JSON array allowed) |
 | `HANDOFF_RUN_RETENTION` | `20` | How many run directories under `<state>/runs/` to keep. Older ones are deleted when a new run starts |
+
+> **Where `duet-task` looks for `TASK.md`**, when `TASK_STATE_FILE` is unset: the current directory first, then the repo root. So running it from the repo root behaves as it always has, and running it from a subdirectory finds the repo's `TASK.md` instead of failing. `duet-handoff` always resolves against the repo root.
 
 [^1]: On Windows, when this variable is unset, the installed launcher at `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` is preferred if it exists; otherwise `codex` is resolved from `PATH`.
 
