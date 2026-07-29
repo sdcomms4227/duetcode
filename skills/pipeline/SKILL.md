@@ -25,7 +25,7 @@ npm run task -- show | lint
 npm run task -- start <id> --objective <목표> --requester <요청자> --designer <설계자>
 npm run task -- set roles.implementer=<모델>  "roles.reviewer=<모델>"  designCheckpoint=<SHA>
 npm run task -- set status=READY | IMPLEMENTING | REVIEW | DONE  [--design-checkpoint <v>]
-npm run task -- record-verification --status PASSED|FAILED|PARTIAL --failed-count <N>
+npm run task -- record-verification --status PASSED|FAILED|PARTIAL --failed-count <N> [--evidence "<검증 명령>"]
 npm run task -- approve-partial          # TTY 필요
 npm run task -- block "<사유>" | unblock | cancel "<사유>" | supersede <대체id> "<사유>" | reset
 ```
@@ -37,7 +37,7 @@ npm run task -- block "<사유>" | unblock | cancel "<사유>" | supersede <대�
 1. **DESIGN(Claude)**: `start` 후 프로즈 4섹션(요구사항·완료 조건 / 필독 문서·불변식 / 영향 범위 / 확정된 설계·미확정)을 채운다. `- 미정` 플레이스홀더가 남으면 READY·핸드오프가 거부된다.
 2. **READY**: 역할(implementer·reviewer)·designCheckpoint 설정 후 `set status=READY`.
 3. **IMPLEMENTING(Codex)**: `npm run handoff`로 위임(→ 핸드오프 섹션). Codex는 구현·로컬 검증 후 `set status=REVIEW`.
-4. **REVIEW(Claude)**: 요구사항·설계·코드·문서·설정 정합성 대조. 보완이면 루프백, 통과면 `record-verification`.
+4. **REVIEW(Claude)**: 요구사항·설계·코드·문서·설정 정합성 대조. 보완이면 루프백, 통과면 `record-verification`. **`--evidence "<검증 명령>"`을 함께 준다** — 그 명령을 실제로 실행해 exit code와 출력 해시를 남긴다. 없이 기록하면 "테스트를 돌렸다"는 자기 신고에 지나지 않는다. 증거의 exit code가 0이 아닌데 PASSED로 기록하면 lint가 거부한다.
 5. **DONE**: `(PASSED && failed==0)` 또는 `(PARTIAL && failed==0 && approve-partial 승인)`일 때만 `set status=DONE`. 코드 작성 완료 ≠ DONE.
 
 ## 핸드오프 (Claude → Codex)
