@@ -47,6 +47,10 @@
 
 > **앞으로 redaction 테스트에 픽스처를 추가할 때는 반드시 런타임 조립 방식을 쓴다.** 리터럴로 넣으면 다음 push에서 같은 일이 반복되고, 그때는 이력 재작성 비용이 훨씬 커진다.
 
+**이 규칙은 이제 자동으로 강제된다** — `npm run lint:secrets`(`scripts/check-secret-literals.js`)가 저장소 전체의 텍스트 파일에서 자격증명 **형태의 리터럴**을 찾아 exit 1로 막고, `scripts/test/secret-literals.test.js`가 `npm test`에서 같은 검사를 돌린다. 검사가 "패턴이 하나도 안 맞아서" 조용히 통과하는 일이 없도록, 테스트는 종류별 위반 샘플을 실제로 잡는지도 함께 확인한다.
+
+허용 목록(`ALLOWED_LITERALS`)에는 GitHub이 공식 예시로 인지해 **막지 않는** 값만 넣는다. 현재 항목은 AWS 예시 키 하나뿐이고, 테스트가 그 목록의 크기를 고정한다 — 목록이 커지면 린트가 무력해지기 때문이다. 근거가 없으면 허용하지 말고 런타임 조립으로 바꾼다. 이 린트는 형식만 보므로 **보안 경계가 아니다.** 목적은 하나다: 다음 push가 이력 재작성으로 이어지지 않게 한다.
+
 ### v0.1.0 → v0.1.1 — 스모크 테스트가 잡은 배포 결함
 
 게시 직후 실설치 스모크 테스트에서 **문서 3개 중 1개만 생성되는** 결함이 드러났다.
@@ -105,7 +109,7 @@
 
 **운영 스킬이 `--evidence`를 빠뜨리고 있었다.** v0.2.0에서 "테스트를 돌렸다"는 자기 신고를 막으려고 넣은 플래그인데 `skills/pipeline/SKILL.md`의 명령 목록에 없어서, 스킬만 보고 따르는 에이전트는 증거 없이 `PASSED`를 기록하게 된다. 게이트를 만들어 놓고 **운영 문서에 적지 않으면 그 게이트는 없는 것과 같다.**
 
-**문서 드리프트 두 건도 같이 걷어냈다.** README 환경변수 표가 `DUET_REPO_ROOT`를 "`duet-handoff` 전용"이라고 적고 있었는데 v0.2.1의 루트 해석 통일로 사실이 아니게 됐다(변경을 낸 그 릴리스에서 놓쳤다). `docs/pipeline-design.md` §5는 verification 쓰기 경로를 "3개뿐"이라며 미구현인 `task verify`를 함께 세고 있었다 — §9가 Tier 2 미구현이라고 밝히지만 그 줄만 읽으면 존재하는 명령으로 읽히고, **이 문서는 대상 저장소로 배포된다.**
+**문서 드리프트 두 건도 같이 걷어냈다.** README 환경변수 표가 `DUET_REPO_ROOT`를 "`duet-handoff` 전용"이라고 적고 있었는데 v0.2.1의 루트 해석 통일로 사실이 아니게 됐다(변경을 낸 그 릴리스에서 놓쳤다). `docs/pipeline-design.md` §5는 verification 쓰기 경로를 "3개뿐"이라며 미구현인 `task verify`를 함께 세고 있었다 — §9가 Tier 2 미구현이라고 밝히지만 그 줄만 읽으면 존재하는 명령으로 읽히고, **이 문서는 대상 저장소로 배포된다.** (이후 `task verify`를 실제로 구현해 어긋남을 반대 방향에서 해소했다 — §7 참조.)
 
 ## 2. 왜 `duetcode`인가 — 재론 방지용 기록
 
@@ -199,15 +203,15 @@ docs/cc-symphony-pipeline-design.md          →  docs/duetcode-pipeline-design.
 docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflow-example.md
 ```
 
-`ensureFileFromTemplate`는 **skip-if-exists**다. 따라서 기존 대상 저장소에 재설치하면 **구 파일이 남은 채 신 파일이 추가로 생성되어 6개가 공존**한다. 자동 정리는 없다.
+`ensureFileFromTemplate`는 **skip-if-exists**다. 따라서 기존 대상 저장소에 재설치하면 **구 파일이 남은 채 신 파일이 추가로 생성되어 6개가 공존**한다. 자동 삭제는 없다 — 사용자 문서를 지우는 것은 설치기의 권한이 아니다(`OBSOLETE_SCRIPTS`·`tools/` 잔재와 같은 정책).
 
-대상 저장소에서 수동으로:
+다만 **탐지는 자동이다.** `install.js`의 `LEGACY_DOCS`가 구 파일명을 알고 있어, 남아 있으면 재설치 시 "신·구 파일이 공존합니다"로 보고한다. 정리는 여전히 대상 저장소에서 수동으로:
 
-1. 구 `docs/cc-symphony-*.md` 3개 삭제
+1. 보고된 구 `docs/cc-symphony-*.md` 3개 삭제
 2. 그 문서를 참조하던 곳 링크 수정 — 대상의 `CLAUDE.md`/`AGENTS.md`, 그리고 대상 `TASK.md` 본문
 3. `.gitignore`의 `# --- cc-symphony pipeline` 주석 블록 갱신
 
-`scripts/test/install.test.js`에는 이 파일명 단정이 없어 테스트로는 안 잡힌다. **눈으로 확인해야 한다.**
+**이 파일명은 이제 테스트가 고정한다**(`scripts/test/install.test.js`). 세 건이 걸린다: 설치 산출물이 정확히 `INSTALLED_DOCS`의 이름들인지, 구 파일이 있을 때 보고하되 지우지 않는지, `LEGACY_DOCS`의 대체 대상이 실제 설치 파일인지. 앞으로 문서 파일명을 바꿀 때는 `INSTALLED_DOCS`와 `LEGACY_DOCS`를 **함께** 고쳐야 하며, 한쪽만 고치면 테스트가 실패한다. 예전처럼 눈으로 확인할 필요는 없다.
 
 ### 6.0 엔진 사본(`tools/`) 정리 — 외부화 이후
 
@@ -229,6 +233,14 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 - 잔재(`task:test`·`handoff:test` 스크립트, `tools/` 디렉터리)는 **보고만 하고 지우지 않는다**(§6.0).
 
 ## 7. 다음 작업
+
+### `task verify` 구현 완료 (Tier 2)
+
+[pipeline-design.md](pipeline-design.md) §9의 검증 하니스를 구현했다(`engine/task/verify.js`, `engine/task/test/verify.test.js`). 이로써 §5의 verification 쓰기 경로 3개가 모두 실재한다 — 그전까지는 §5가 세 개를 세고 §9가 "미구현"이라 밝히는 어긋난 상태였고, **이 문서들은 대상 저장소로 배포되므로** 그 어긋남이 그대로 노출됐다(§2의 v0.2.2 항목 참조).
+
+게이트 성격이 강한 기능이라 "무엇을 못 하는가"를 테스트로 고정했다: 운영으로 읽히는 프로파일은 `allowedProfiles`로도 못 뚫는다, `GET`/`HEAD` 외 메서드는 계획 단계에서 막혀 **요청이 한 건도 나가지 않는다**, 실행된 검사가 0건이면 `PASSED`가 아니라 `PARTIAL`이다, 최대 실행 시간 초과는 건너뜀이 아니라 실패다, 하니스가 띄운 서버만 종료한다.
+
+> **테스트 작성 시 함정(실측)**: 이 테스트들은 부모 프로세스에서 띄운 HTTP 서버를 상대한다. CLI를 `spawnSync`로 부르면 부모 이벤트 루프가 멈춰 서버가 응답하지 못하고, 모든 검사가 타임아웃으로 실패한다 — 그런데 그 실패가 **테스트가 기대한 `FAILED`와 구분되지 않아** 잘못된 이유로 초록이 뜬다(실제로 그렇게 통과한 케이스가 있었다). 서버를 상대하는 CLI 호출은 반드시 비동기 `spawn`을 쓴다.
 
 [engine-externalization.md](engine-externalization.md)는 **게시 전에 먼저 끝냈다** — §3 위치 독립화와 §4 방안 A를 모두 구현했다. 순서를 뒤집은 이유는 외부화가 `install.js`를 크게 들어내는 breaking 변경이고, 대상 저장소가 1곳뿐인 지금이 가장 싼 시점이기 때문이다. 게시 이후였다면 마이그레이션 비용이 붙었다.
 
