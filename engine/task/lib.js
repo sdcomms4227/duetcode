@@ -1,5 +1,6 @@
 const fs = require('node:fs');
-const { execFileSync } = require('node:child_process');
+const path = require('node:path');
+const { execFileSync, spawnSync } = require('node:child_process');
 const YAML = require('yaml');
 
 const STATES = ['IDLE', 'DESIGN', 'READY', 'IMPLEMENTING', 'REVIEW', 'DONE', 'BLOCKED', 'CANCELLED', 'SUPERSEDED'];
@@ -79,7 +80,39 @@ function parseSource(source) {
   if (doc.errors.length) fail(`front matter YAML 오류: ${doc.errors[0].message}`);
   return { doc, data: doc.toJS(), body: match[2] };
 }
-function load(file = 'TASK.md') { const source = fs.readFileSync(file, 'utf8'); return { file, source, ...parseSource(source) }; }
+// 저장소 루트를 위치 추론이 아니라 명시적으로 해석한다(DUET_REPO_ROOT → git → cwd). 폴백했다는 사실을
+// source로 돌려주므로 호출자가 조용히 삼키지 않을 수 있다. handoff/lib.js가 이것을 그대로 재사용한다 —
+// 두 엔진이 서로 다른 저장소 루트를 계산하면 같은 명령이 다른 TASK.md를 건드리게 된다.
+function resolveRepoRoot(env = process.env, cwd = process.cwd()) {
+  if (env.DUET_REPO_ROOT) return { root: path.resolve(env.DUET_REPO_ROOT), source: 'env' };
+  const found = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', windowsHide: true });
+  const top = (found.stdout || '').trim();
+  if (found.status === 0 && top) return { root: path.resolve(top), source: 'git' };
+  return { root: path.resolve(cwd), source: 'cwd' };
+}
+// TASK.md의 위치를 해석한다. 예전에는 cwd 상대 'TASK.md' 하나뿐이라, 서브디렉터리에서 duet-task를 부르면
+// 저장소의 TASK.md를 찾지 못하고 실패했다 — 같은 저장소에서 duet-handoff는 찾는데(자체 repo root 해석),
+// 두 엔진의 동작이 갈려 있었다. 탐색 순서는 기존 동작을 그대로 보존하도록 잡는다:
+// 명시 지정(TASK_STATE_FILE) → cwd → 저장소 루트. cwd가 항상 우선이므로 루트에서 실행하던 기존 호출은
+// 결과가 바뀌지 않고, 지금까지 실패하던 서브디렉터리 호출만 성공으로 바뀐다.
+function resolveTaskFile(env = process.env, cwd = process.cwd()) {
+  if (env.TASK_STATE_FILE) return env.TASK_STATE_FILE;
+  const local = path.resolve(cwd, 'TASK.md');
+  if (fs.existsSync(local)) return local;
+  const rooted = path.join(resolveRepoRoot(env, cwd).root, 'TASK.md');
+  if (fs.existsSync(rooted)) return rooted;
+  return local; // 어디에도 없으면 원래 자리를 가리켜, 오류 메시지가 사용자가 선 곳을 말하게 한다
+}
+function load(file = resolveTaskFile()) {
+  let source;
+  try {
+    source = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    fail(`TASK.md를 찾을 수 없습니다: ${file}\n저장소 루트에서 실행하거나 TASK_STATE_FILE로 경로를 지정하세요.`);
+  }
+  return { file, source, ...parseSource(source) };
+}
 // 임시 파일에 쓴 뒤 rename한다. TASK.md는 파이프라인 전체가 걸린 단일 소스인데, 직접 덮어쓰면
 // 쓰기 도중 죽었을 때 반쯤 쓰인 파일이 남아 lint·show·handoff가 전부 막힌다.
 // (핸드오프 쪽 writeJson은 처음부터 이 방식이었다 — 같은 저장소 안에서 원자성 규율이 갈려 있었다.)
@@ -242,4 +275,4 @@ function resetBody(model) {
   if (idx >= 0) model.body = `${model.body.slice(0, idx + marker.length)}\n\n${STARTER_BODY}`;
   else model.body = `\n\n# TASK.md — Active Task 상태\n\n## Active Task\n\n${STARTER_BODY}`;
 }
-module.exports = { ACTIVE, TERMINAL, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment, strayFrontMatter };
+module.exports = { ACTIVE, TERMINAL, resolveRepoRoot, resolveTaskFile, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment, strayFrontMatter };

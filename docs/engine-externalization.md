@@ -49,6 +49,10 @@
 
 `git rev-parse` 실패를 조용히 삼키지 않는다. 3번으로 폴백했다는 사실은 `--verbose`류에서 확인 가능해야 한다 — 잘못된 root로 조용히 동작하면 다른 저장소의 `TASK.md`를 건드릴 수 있다.
 
+해석기는 `engine/task/lib.js`의 `resolveRepoRoot` 하나이고 `engine/handoff/lib.js`가 이를 import한다(의존 방향은 기존과 같이 handoff → task). 두 엔진이 각자 계산하면 같은 명령이 서로 다른 `TASK.md`를 가리킬 수 있다.
+
+task CLI는 그 위에 `resolveTaskFile`을 얹어 상태 파일을 찾는다: `TASK_STATE_FILE` → cwd의 `TASK.md` → 저장소 루트의 `TASK.md`. cwd가 루트보다 우선하므로 루트에서 실행하던 기존 호출은 결과가 바뀌지 않고, 지금까지 실패하던 하위 디렉터리 호출만 성공으로 바뀐다. 셋 다 없으면 찾아본 경로와 `TASK_STATE_FILE` 지정 방법을 오류에 담는다.
+
 ### 3.2 형제 엔진 참조 (B2)
 
 `TASK_CLI` 경로 join을 없애고 `require('../task/lib.js')`로 직접 참조한다. 프로세스 스폰이 꼭 필요한 경우(TTY 격리 등)만 `require.resolve('../task/index.js')`를 쓴다 — 어느 쪽이든 **엔진 내부의 상대 참조**이므로 위치에 무관하다.
@@ -168,7 +172,7 @@ duetcode에 root `package.json` 신설(B6):
 
 ## 8. 완료 조건
 
-- [x] 엔진이 위치에 무관하게 동작한다 — repo root를 `DUET_REPO_ROOT` → `git rev-parse` → cwd로 **해석**하고, 형제 엔진은 `require.resolve`로 찾는다(B1·B2). 단, §3.1의 해석기는 **handoff에만** 들어갔다. task CLI는 repo root 개념 없이 `TASK.md`를 cwd 기준으로 열며 `DUET_REPO_ROOT`를 읽지 않는다 — 위치 추론(B1)은 handoff의 결함이었으므로 목표는 충족하지만, 하위 디렉터리에서 `duet-task`를 부르면 저장소의 `TASK.md`를 찾지 못한다.
+- [x] 엔진이 위치에 무관하게 동작한다 — repo root를 `DUET_REPO_ROOT` → `git rev-parse` → cwd로 **해석**하고, 형제 엔진은 `require.resolve`로 찾는다(B1·B2). §3.1의 해석기는 task `lib.js`에 있고 handoff가 import해 **두 엔진이 같은 root를 계산한다**. task CLI는 그 위의 `resolveTaskFile`로 `TASK_STATE_FILE` → cwd → 저장소 루트 순으로 `TASK.md`를 찾으므로, 하위 디렉터리에서 `duet-task`를 불러도 저장소의 `TASK.md`에 도달한다.
 - [x] `engine/`의 테스트가 자기설치 없이 직접 돈다(B5). 이 저장소에서 `npm test` 하나로 끝난다.
 - [x] 런타임 상태(`<root>/.duet/state/`)와 대상 설정(`.duet/verify.json`)이 엔진 밖에 있다(B3·B4).
 - [x] 대상 저장소에 엔진 사본이 **아예 생기지 않는다** — gitignore할 `tools/`가 없다.

@@ -2,7 +2,7 @@
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
-const { ACTIVE, TERMINAL, EMPTY_VERIFICATION, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, resetBody, syncIssueComment } = require('./lib');
+const { ACTIVE, TERMINAL, EMPTY_VERIFICATION, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, resetBody, syncIssueComment, resolveTaskFile } = require('./lib');
 const option = (args, name) => { const i = args.indexOf(name); return i < 0 ? null : args[i + 1]; };
 const required = (value, usage) => { if (value == null || value === '') fail(`사용법: ${usage}`); return value; };
 // key별로 형변환을 제한한다: issue만 정수, highRisk만 boolean으로 coerce하고, 나머지 식별자 필드
@@ -25,7 +25,7 @@ function main(args = process.argv.slice(2)) {
   // 버전 조회는 TASK.md 없이도 동작해야 한다(설치 검증·버전 확인 용도). load()보다 먼저 처리한다.
   // 단일 소스는 package.json — plugin.json과의 일치는 scripts/test/package-meta.test.js가 강제한다.
   if (command === '--version' || command === '-v') return console.log(require('../../package.json').version);
-  const model = load(process.env.TASK_STATE_FILE || 'TASK.md');
+  const model = load(resolveTaskFile());
   if (command === 'show') return console.log(JSON.stringify(model.doc.toJS(), null, 2));
   if (command === 'lint') { lint(model); return console.log('TASK.md lint 통과'); }
   if (command === 'start') {

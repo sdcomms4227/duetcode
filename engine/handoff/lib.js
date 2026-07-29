@@ -6,15 +6,9 @@ const { spawnSync } = require('node:child_process');
 // 저장소 루트를 위치 추론이 아니라 명시적으로 해석한다. 엔진이 tools/·node_modules/·.duet/ 어디에
 // 놓이든 같은 답을 내야 하기 때문이다(예전에는 __dirname/../..로 "엔진은 <repo>/tools/*에 있다"고 가정했다).
 // 폴백했다는 사실을 조용히 삼키지 않는다 — 잘못된 root로 동작하면 다른 저장소의 TASK.md를 건드린다.
-function resolveRepoRoot(env = process.env, cwd = process.cwd()) {
-	if (env.DUET_REPO_ROOT) return { root: path.resolve(env.DUET_REPO_ROOT), source: 'env' };
-	const found = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-		cwd, encoding: 'utf8', windowsHide: true
-	});
-	const top = (found.stdout || '').trim();
-	if (found.status === 0 && top) return { root: path.resolve(top), source: 'git' };
-	return { root: path.resolve(cwd), source: 'cwd' };
-}
+// 규칙 자체는 task 엔진과 공유한다: 두 엔진이 각자 계산하면 같은 명령이 다른 TASK.md를 건드릴 수 있다.
+// (의존 방향은 기존과 같다 — handoff가 task를 참조한다.)
+const { resolveRepoRoot } = require('../task/lib');
 
 const { root: REPO_ROOT, source: REPO_ROOT_SOURCE } = resolveRepoRoot();
 // 형제 엔진은 경로 조립이 아니라 모듈 해석으로 찾는다 — 엔진 내부 상대 참조라 위치에 무관하다.
