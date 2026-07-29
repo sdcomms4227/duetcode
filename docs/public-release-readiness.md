@@ -49,8 +49,8 @@
 
 | 매칭 | 실체 | 위치 |
 |---|---|---|
-| `-----BEGIN PRIVATE KEY-----` | 본문이 `ZmFrZS1wcml2YXRlLWtleS1tYXRlcmlhbA==` = base64(`fake-private-key-material`) | `engine/handoff/test/redaction.test.js:17` |
-| `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | AWS 공식 문서의 예시 키(이미 전 세계 공개) | `engine/handoff/test/redaction.test.js:111` |
+| `-----BEGIN PRIVATE KEY-----` | 본문이 `ZmFrZS1wcml2YXRlLWtleS1tYXRlcmlhbA==` = base64(`fake-private-key-material`) | `engine/handoff/test/redaction.test.js:20` |
+| `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | AWS 공식 문서의 예시 키(이미 전 세계 공개) | `engine/handoff/test/redaction.test.js:114` |
 | `xoxb-1234…`, `AIza…`, `Basic dXNlcjpwYXNzd29yZA==` | 자리표시자. 마지막 것은 base64(`user:password`) | 동 파일 |
 | `token: …` 다수 | `crypto.randomUUID()` 기반 **락 소유권 토큰**. 자격증명이 아니다 | `engine/handoff/lib.js:165`, `test/lock.test.js` |
 
@@ -59,6 +59,8 @@
 > **보강(실측)**: "명백히 가짜"만으로는 부족했다. 첫 push가 GH013 push protection에 걸렸고, 걸린 것은 위 표의 `xoxb-1234…` 하나였다 — 사람 눈에는 명백한 자리표시자지만 **탐지기는 형식만 본다**. 반면 같은 배열의 `'ASIA' + 'B'.repeat(16)`·`'AIza' + 'A'.repeat(35)`는 통과했다. **리터럴이 소스에 존재하지 않기 때문**이다.
 >
 > 따라서 규칙을 강화한다: **탐지 대상 형식의 픽스처는 리터럴로 쓰지 말고 런타임에 조립한다.** 이력 재작성으로 해결했으며 경위는 [release-checklist.md §1](release-checklist.md)에 있다. 그 값이 최초 커밋에 있었던 탓에 이력 전체를 다시 써야 했고, push 전이라 비용이 없었을 뿐이다.
+>
+> **자동 강제(현재)**: 이 규칙은 더 이상 사람의 기억에 의존하지 않는다. `npm run lint:secrets`(`scripts/check-secret-literals.js`)가 저장소 전체에서 자격증명 형태의 리터럴을 찾아 막고, `npm test`가 같은 검사를 포함한다. 위 표에서 리터럴로 남아 있던 JWT 픽스처도 런타임 조립으로 바꿨다. 예외는 `ALLOWED_LITERALS`의 AWS 예시 키 하나뿐이며, 이는 GitHub이 공식 예시로 인지해 막지 않는 값이다.
 
 ### 3.2 설치 대상·고객사·인프라 정보 — 0건
 

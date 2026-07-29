@@ -41,7 +41,8 @@
     "version:sync": "node scripts/sync-version.js",
     "version:check": "node scripts/sync-version.js --check",
     "version": "npm run version:sync",
-    "test": "npm run task:test && npm run handoff:test && npm run install:test"
+    "test": "npm run task:test && npm run handoff:test && npm run install:test",
+    "lint:secrets": "node scripts/check-secret-literals.js"
   },
   "dependencies": {
     "yaml": "^2.8.1"

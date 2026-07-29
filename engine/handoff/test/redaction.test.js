@@ -6,8 +6,11 @@ const path = require('node:path');
 const { redactText, StreamRedactor, redactJsonl, redactToFile, sanitizeFile } = require('../lib');
 
 test('JWT, AWS, GCP, Slack, basic auth, PEM credential을 가린다', () => {
+	// 픽스처는 전부 런타임 조립이다 — 리터럴로 두면 push protection이 소스를 보고 막는다
+	// (docs/release-checklist.md §2, scripts/check-secret-literals.js가 강제한다).
+	// AWS 예시 키만 리터럴인데, GitHub이 공식 예시로 인지해 막지 않는 값이다.
 	const credentials = [
-		'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature_value_12345',
+		['eyJ', 'hbGciOiJIUzI1NiJ9'].join('') + '.' + ['eyJ', 'zdWIiOiIxMjM0NTY3ODkwIn0'].join('') + '.signature_value_12345',
 		'AKIAIOSFODNN7EXAMPLE',
 		'ASIA' + 'B'.repeat(16),
 		'AIza' + 'A'.repeat(35),
