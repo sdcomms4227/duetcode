@@ -7,7 +7,7 @@
 
 ## 1. 게시 — **완료**
 
-`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.2.0`**.
+`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.2.1`**.
 
 > 이 절의 버전은 **손으로 갱신한다.** 자동 동기화(§8) 대상은 설치가 실제로 해석하는 참조뿐이고, 아래 경위 서술의 버전은 기록이라 치환하면 거짓이 된다.
 
@@ -77,6 +77,20 @@
 
 **시크릿 스캐너**: 이번엔 걸리지 않았다. redaction 테스트에 픽스처를 추가하면서 §시크릿 스캐너 방침대로 런타임 조립(`'sk-' + 'a'.repeat(40)`)을 썼기 때문이다. 규칙이 실제로 작동한 첫 사례다.
 
+### v0.2.0 → v0.2.1 — 저장소 자신에게는 없던 CI, 그리고 두 엔진의 경로 규칙 통일
+
+**patch로 올린 이유**: 공개 계약(`EXIT_CODES`, CLI 인터페이스, `TASK.md` 스키마) 변경이 없다. `duet-task`의 상태 파일 탐색은 넓어지기만 했다 — `TASK_STATE_FILE` → cwd → 저장소 루트 순이고 cwd가 루트보다 우선하므로, 지금까지 성공하던 호출의 결과는 하나도 바뀌지 않는다.
+
+**세 가지 모두 "감시자가 없던 자리"였다.**
+
+1. **이 저장소에 CI가 없었다.** 대상 저장소용 `templates/task-lint.yml`은 배포하면서 정작 duetcode 자신은 push/PR에서 아무것도 돌지 않았다. Node 버전 간 러너 동작 차이(§5 말미)를 문서로 경계하는 프로젝트인데 그 회귀를 잡을 매트릭스가 없었다. `.github/workflows/ci.yml`이 ubuntu × 18·20·22·24와 windows × 20·22로 `npm test`를, 별도 job으로 `version:check`를 돌린다. Windows를 넣은 이유는 `taskkill` 프로세스 트리 종료와 `LOCALAPPDATA` codex 런처 탐색이 그 플랫폼에서만 실행되기 때문이다.
+
+2. **중단 요청 파일을 지우는 주체가 없었다.** `consumeAbortRequest`는 `runId`가 다르면 `false`만 돌려주고 파일을 남긴다. 늦게 도착한 중단 요청(대상 run이 이미 끝난 경우)은 `.duet/state/abort`에 영구히 남아, 이후 모든 run이 250ms마다 읽기만 하는 쓰레기가 됐다. 새 run을 만드는 시점의 abort는 **정의상 stale이다** — dispatch는 lock을 쥔 뒤에 run을 만들므로 그때 다른 run을 겨냥한 유효한 요청이 존재할 수 없다. `createRunDirectory`가 걷어내고, 걷어냈다는 사실은 `metadata.json`의 `staleAbortCleared`에 남긴다(`prunedRuns`와 같은 원칙 — 조용히 사라지게 두지 않는다).
+
+3. **두 엔진이 저장소 루트를 각자 계산했다.** handoff에만 해석기가 있었고 task CLI는 `TASK.md`를 cwd 기준으로 열었다. 그래서 같은 저장소의 하위 디렉터리에서 `duet-handoff`는 동작하고 `duet-task`는 "파일 없음"으로 죽었다. 해석기를 `engine/task/lib.js`로 옮기고 handoff가 import한다(의존 방향은 기존과 같은 handoff → task). 규칙이 두 벌이면 같은 명령이 서로 다른 `TASK.md`를 건드릴 수 있다.
+
+> **탐색 순서에서 cwd를 루트보다 앞에 둔 것이 호환성의 핵심이다.** 루트를 먼저 보게 하면 하위 디렉터리에 자기 `TASK.md`를 두고 쓰던 사용자의 동작이 조용히 바뀐다. 순수한 확장이 되도록 폴백을 뒤에 붙였고, 셋 다 없을 때만 오류를 낸다 — 그 오류는 찾아본 경로와 `TASK_STATE_FILE` 지정 방법을 함께 말한다.
+
 ## 2. 왜 `duetcode`인가 — 재론 방지용 기록
 
 이름 후보를 npm에서 실측한 결과다. 나중에 "agentmux가 더 낫지 않았나"가 다시 나오면 이 표를 보면 된다.
@@ -108,7 +122,7 @@
 | 플러그인·저장소명 | `duetcode` | `duet` 단독은 음악 앱과 섞여 기각 |
 | 슬래시 커맨드 | `/duetcode:task`, `/duetcode:handoff` | |
 | 로컬 상태 디렉터리 | `.duet/` | 구현 완료(`state/`, `verify.json`) |
-| repo root 오버라이드 env | `DUET_REPO_ROOT` | 구현 완료 — `duet-handoff` 한정(task CLI는 cwd 기준) |
+| repo root 오버라이드 env | `DUET_REPO_ROOT` | 구현 완료 — 두 엔진 공통(해석기는 `engine/task/lib.js`, handoff가 import) |
 | bin 이름 | `duet-task`, `duet-handoff`, `duet-init` | 구현 완료 |
 | 초기 버전 | `0.1.0` | 신규 저장소이므로 초기화 (구 저장소는 `0.1.1`이었다). 현재 버전은 `package.json`이 단일 소스다 — 이 표에서 찾지 말 것 |
 
@@ -132,9 +146,9 @@
 회귀 판단의 기준점이다. 무언가 바꾼 뒤 이 숫자가 달라지면 개명이 아니라 그 변경이 원인이다.
 
 ```
-task:lint      통과
-task:test      30 / 30
-handoff:test   52 / 52
+task:lint      통과 (이 저장소에 TASK.md가 있을 때만)
+task:test      50 / 50
+handoff:test   72 / 72
 scripts/test   22 / 22
 ```
 
