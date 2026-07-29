@@ -1,6 +1,9 @@
 {
   "profile": "dev",
+  "allowedProfiles": ["dev", "local", "test"],
   "baseUrl": "http://127.0.0.1:8080",
+  "maxDurationMs": 120000,
+  "checkTimeoutMs": 10000,
   "credentials": {
     "usernameEnv": "VERIFY_USERNAME",
     "passwordEnv": "VERIFY_PASSWORD"
@@ -8,5 +11,19 @@
   "records": {
     "readOnlyRecordId": "replace-locally"
   },
-  "_note": "샘플. 실제 값은 저장소 루트의 .duet/verify.json(gitignore 대상)에 둔다. task verify 자동 하니스는 아직 미구현(Tier 2)이며, 프로파일 화이트리스트/계정/recordId 형식은 프로젝트에 맞게 정의한다."
+  "checks": [
+    { "name": "health", "path": "/health", "expectStatus": 200 },
+    { "name": "auth-required", "path": "/api/me", "expectStatus": 401 },
+    { "name": "record-read", "path": "/api/records/{records.readOnlyRecordId}", "expectStatus": 200, "auth": true }
+  ],
+  "_note": "샘플. 실제 값은 저장소 루트의 .duet/verify.json(gitignore 대상)에 두고, 프로파일·계정·recordId·checks는 프로젝트에 맞게 정의한다.",
+  "_rules": [
+    "profile은 allowedProfiles 안에 있어야 한다. 이름이 운영으로 읽히면(prod/production/live/release/main 등) allowedProfiles에 넣어도 거부된다 — 운영 검증은 사람 게이트다.",
+    "checks는 비파괴만 가능하다: GET/HEAD, 요청 본문 불가, 리다이렉트 미추적. expectStatus에 401 같은 값을 써서 '인증 없이는 거부되는가'를 확인하는 검증-실패 프로빙이 권장된다.",
+    "baseUrl은 기본적으로 루프백만 허용한다. 원격 대상은 allowRemoteHost: true를 명시해야 한다.",
+    "비밀값은 이 파일에 적지 않는다. credentials에는 '어느 환경변수를 볼지'만 적고 값은 환경변수로 준다.",
+    "{records.readOnlyRecordId}처럼 path 안에 설정 경로를 참조할 수 있다. 값이 없거나 'replace-locally'면 그 검사만 건너뛰고 결과는 PARTIAL이 된다.",
+    "requires: [\"env:SOME_VAR\"]로 특정 환경변수가 있을 때만 실행되는 검사를 정의할 수 있다.",
+    "server를 주면(command/args/readyPath) 하니스가 직접 띄우고, 자신이 띄운 프로세스만 종료한다. 이미 떠 있는 서버는 건드리지 않는다."
+  ]
 }

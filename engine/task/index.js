@@ -3,6 +3,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { ACTIVE, TERMINAL, EMPTY_VERIFICATION, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, resetBody, syncIssueComment, resolveTaskFile } = require('./lib');
+const { runVerify } = require('./verify');
 const option = (args, name) => { const i = args.indexOf(name); return i < 0 ? null : args[i + 1]; };
 const required = (value, usage) => { if (value == null || value === '') fail(`사용법: ${usage}`); return value; };
 // key별로 형변환을 제한한다: issue만 정수, highRisk만 boolean으로 coerce하고, 나머지 식별자 필드
@@ -90,6 +91,30 @@ function main(args = process.argv.slice(2)) {
       };
     }
     set(model, 'verification', { status, failedCount: count, partialApproved: false, approvedBy: null, approvedAt: null, updated: now(), evidence });
+  } else if (command === 'verify') {
+    // verification에 쓰는 세 번째 경로(docs/pipeline-design.md §5·§9). record-verification과 같은
+    // 제약을 받는다: REVIEW에서만, 승인 3필드는 항상 초기화. 다른 점은 결과를 사람이 주는 게 아니라
+    // 하니스가 실측해 정한다는 것이고, 그래서 증거를 자기 신고가 아닌 실행 결과로 남긴다.
+    if (get(model, 'status') !== 'REVIEW') fail('verify는 REVIEW에서만 허용됩니다.');
+    return runVerify().then((report) => {
+      const json = JSON.stringify(report, null, 2);
+      console.log(json);
+      // evidence.exitCode는 하니스의 판정과 일치해야 한다. lint가 "PASSED인데 exitCode≠0"을 거부하므로,
+      // 여기서 둘을 어긋나게 쓰면 자기 자신이 만든 TASK.md가 lint를 통과하지 못한다.
+      const exitCode = report.status === 'PASSED' ? 0 : 1;
+      set(model, 'verification', {
+        status: report.status, failedCount: report.failedCount, partialApproved: false, approvedBy: null, approvedAt: null, updated: now(),
+        evidence: {
+          command: `duet-task verify (profile=${report.profile}, ${report.baseUrl})`,
+          exitCode,
+          outputSha256: require('node:crypto').createHash('sha256').update(json).digest('hex'),
+          at: report.at
+        }
+      });
+      lint(model); save(model);
+      // 검증 실패를 exit 0으로 끝내면 스크립트가 실패를 못 본다. 기록은 이미 끝났으므로 상태는 남는다.
+      if (exitCode !== 0) process.exitCode = 1;
+    });
   } else if (command === 'approve-partial') {
     if (get(model, 'status') !== 'REVIEW' || get(model, 'verification.status') !== 'PARTIAL') fail('REVIEW의 PARTIAL 결과에서만 승인할 수 있습니다.');
     if (!process.stdin.isTTY || !process.stdout.isTTY) fail('stdin과 stdout이 모두 TTY인 대화형 실행에서만 허용됩니다.');
@@ -107,8 +132,14 @@ function main(args = process.argv.slice(2)) {
     const result = syncIssueComment(data, issue, args => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'] }));
     console.log(`issue #${issue} 동기화 코멘트를 ${result.action === 'updated' ? '갱신했습니다' : '등록했습니다'}.`);
     if (['CANCELLED', 'SUPERSEDED'].includes(data.status)) set(model, 'closure.archiveRef', `issue:#${issue}`);
-  } else fail('명령: show|start|set|block|unblock|cancel|supersede|reset|record-verification|archive|approve-partial|lint|issue-sync|--version');
+  } else fail('명령: show|start|set|block|unblock|cancel|supersede|reset|record-verification|verify|archive|approve-partial|lint|issue-sync|--version');
   lint(model);
   save(model);
 }
-try { main(); } catch (error) { console.error(`task: ${error.message}`); process.exitCode = 1; }
+// verify만 비동기다(HTTP 요청). 동기 throw와 Promise rejection이 갈라지면 한쪽이 조용히 exit 0으로
+// 끝나므로, 두 경로가 같은 핸들러로 모이게 한다.
+const onError = (error) => { console.error(`task: ${error.message}`); process.exitCode = 1; };
+try {
+  const result = main();
+  if (result && typeof result.then === 'function') result.catch(onError);
+} catch (error) { onError(error); }

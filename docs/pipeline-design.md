@@ -87,7 +87,7 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 
 - 필드: `status`(PASSED|FAILED|PARTIAL|null), `failedCount`(int), `partialApproved`(bool), `approvedBy`(str|null), `approvedAt`(ISO|null), `updated`(ISO|null), `evidence`(객체|null).
 - **`evidence`(선택)**: `task record-verification --evidence "<명령>"`을 주면 그 명령을 **실제로 실행**해 `{command, exitCode, outputSha256, at}`을 남긴다. 문자열만 받아 적으면 "테스트를 돌렸다"는 자기 신고에 지나지 않기 때문이다. lint는 **`PASSED`인데 `exitCode ≠ 0`인 모순을 거부**한다. 구버전 `TASK.md` 호환을 위해 필드 자체는 선택이다.
-- **쓰기 경로 제한**: `verification.*`는 `task set`으로 직접 수정 불가. 현재 경로는 2개뿐 — `task record-verification`(수동 기록), `task approve-partial`(승인 3필드). 여기에 `task verify`(자동 하니스)가 더해질 예정이나 **아직 구현되지 않았다**(§9).
+- **쓰기 경로 제한**: `verification.*`는 `task set`으로 직접 수정 불가. 경로는 3개뿐 — `task record-verification`(수동 기록), `task verify`(자동 하니스, §9), `task approve-partial`(승인 3필드). `verify`는 `record-verification`과 같은 제약(REVIEW 전용, 승인 3필드 초기화)을 받되, 결과를 사람이 주는 대신 하니스가 실측해 정하고 증거의 `exitCode`를 자신의 판정과 일치시킨다.
 - `task record-verification --status <S> --failed-count <N>`: **REVIEW에서만 허용**, 승인 3필드 항상 초기화.
 - `task approve-partial`: `stdin.isTTY && stdout.isTTY`를 검사해 **비대화형 실행 거부**. TTY 검사는 자동 실행 방지 장치일 뿐 사람 신원 보증이 아니다.
 - **`REVIEW→DONE` 허용 조건**:
@@ -145,9 +145,22 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 - **로그는 흘려보내되, 안전을 증명할 수 있는 지점까지만 방출한다.** 마스킹은 완전한 문맥에서 해야 경계 누출이 없으므로 예전에는 종료 시 한 번만 기록했는데, 그러면 30분짜리 run의 `events.jsonl`이 끝날 때까지 비어 있고 강제종료 시 전량 유실됐다. 지금은 ① 줄 경계에서만 자르고(한 줄짜리 토큰 보호) ② env 유래 시크릿 중 가장 긴 것보다 넓은 tail을 남기며(멀티라인 시크릿 보호) ③ 닫히지 않은 PEM 블록은 닫힐 때까지 들고 있다(길이 상한이 없는 유일한 패턴). 이 셋을 만족하는 앞부분만 내보낸다.
 - **run 산출물은 보존 개수를 넘으면 오래된 것부터 지운다**(`HANDOFF_RUN_RETENTION`, 기본 20). 프롬프트·모델 출력 전문이 남는 디렉터리라 무제한 누적은 용량보다 잔존 자체가 위험이다. 삭제 건수는 새 run의 `metadata.json`에 남겨 조용히 사라지지 않게 한다.
 
-## 9. 검증 하니스 `task verify` (Tier 2 — 미구현)
+## 9. 검증 하니스 `task verify` (Tier 2 — 구현됨)
 
-비파괴 HTTP 스모크를 CLI로 고정할 예정. 허용 프로파일 화이트리스트(운영 프로파일 거부), 비파괴 원칙(read-only GET·no-op·검증-실패 프로빙), 최대 실행 시간, 소유권 확인 후 프로세스 종료, 실패 시 cleanup. 계정·데이터는 `.duet/verify.json`(커밋 제외). 설정 누락은 해당 항목만 `PARTIAL`.
+비파괴 HTTP 스모크를 CLI로 고정한다(`engine/task/verify.js`). 설정은 `.duet/verify.json`(커밋 제외), 샘플은 `templates/verify.example.json`. **REVIEW에서만** 실행되며 결과를 `verification`에 직접 쓴다 — §5의 세 번째 쓰기 경로다.
+
+자동으로 `PASSED`를 쓸 수 있는 유일한 경로이므로, 무엇을 할 수 있는지를 좁게 고정한다.
+
+- **허용 프로파일 화이트리스트**: `profile`은 `allowedProfiles`(기본 `dev`/`local`/`test`) 안에 있어야 한다. 그 위에 **이름이 운영으로 읽히는 프로파일**(`prod`·`production`·`prd`·`live`·`release`·`main`·`master`)은 화이트리스트에 넣어도 거부한다 — 설정으로 뒤집을 수 없는 유일한 규칙이며, 근거는 §10-1(운영 대상 작업은 사람 게이트)이다. 과탐지도 결함이므로 경계는 구분자 기준이다(`reproduce`는 통과한다).
+- **비파괴 원칙**: `GET`/`HEAD`만, 요청 본문 불가, 리다이렉트 미추적(따라가면 설정에 없는 호스트로 옮겨간다), `path`가 `baseUrl` origin 밖을 가리키면 거부. `baseUrl`은 기본적으로 루프백만 허용하고 원격은 `allowRemoteHost: true`를 명시해야 한다. **검사 계획은 요청을 한 건도 보내기 전에 전부 세운다** — 절반 보내고 실패하면 "비파괴"가 절반만 지켜진 셈이 된다. `expectStatus`에 `401`을 주는 검증-실패 프로빙이 권장 형태다.
+- **최대 실행 시간**: 전체 `maxDurationMs`(기본 120초)와 검사별 `checkTimeoutMs`(기본 10초). 전체 제한을 넘기면 남은 검사는 건너뜀이 아니라 **실패**다 — timeout을 미실행으로 해석하면 "느려서 못 끝낸 것"이 조용히 통과한다(§8 핸드오프의 timeout 규율과 같다).
+- **소유권 확인 후 프로세스 종료**: `server`를 주면 하니스가 직접 띄우고, **자신이 spawn한 자식만** 종료한다. 이미 떠 있던 서버는 우리 것이 아니므로 건드리지 않는다. 정리는 성공·실패·예외 모든 경로에서 실행된다(`finally`).
+- **설정 누락은 해당 항목만 `PARTIAL`**: 계정 환경변수나 `{records.*}` 참조가 비어 있으면(`replace-locally` 자리표시자 포함) 그 검사만 건너뛴다. 전체를 `FAILED`로 만들면 "설정이 없다"와 "기능이 깨졌다"가 구분되지 않는다. 비밀값은 설정 파일이 아니라 환경변수에서 오고, 설정에는 "어느 환경변수를 볼지"만 적는다.
+- **판정**: 실패 1건 이상 → `FAILED`(+건수), 실패 0·건너뜀 있음 → `PARTIAL`, 전부 통과 → `PASSED`. **실행된 검사가 0건이면 `PASSED`가 아니라 `PARTIAL`이다** — "아무것도 안 했다"가 "다 통과했다"로 읽히면 하니스가 게이트가 아니라 우회로가 된다.
+- **증거**: 리포트 JSON의 sha256과 함께 `exitCode`를 남기되 자신의 판정과 일치시킨다(`PASSED`면 0). §5의 "PASSED인데 exitCode≠0" 거부 규칙이 이 경로에도 그대로 걸린다. CLI도 `FAILED`/`PARTIAL`이면 exit 1로 끝내되 **결과 기록은 마친 뒤**다.
+- `PARTIAL`로 DONE에 가려면 여전히 `approve-partial`이 필요하다. 하니스가 썼다는 이유로 DONE 게이트가 느슨해지지 않는다.
+
+이 하니스는 보안 경계가 아니다(§2 신뢰 모델과 동일). 설정 파일을 쓸 수 있는 사람은 무엇이든 요청하게 만들 수 있다. 목적은 협조적이지만 실수할 수 있는 실행자가 운영 환경을 건드리지 않게 하는 것이다.
 
 ## 10. 사람 게이트 (자동화 금지 지점)
 

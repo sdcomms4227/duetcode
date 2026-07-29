@@ -141,4 +141,5 @@ CANCELLED·SUPERSEDED는 종결 이유를 보존해야 reset할 수 있다(종�
 - 옵션이 있는 명령은 PowerShell/npm 조합에서 옵션이 제거될 수 있으므로 `npm run task -- ...` 직접 실행을 권장한다.
 - `start`는 `## Active Task` 이하 본문을 `- 미정` 스켈레톤으로 교체한다. 설계자는 READY 전환 전에 이를 실제 내용으로 채워야 하며, 미교체 시 lint가 READY를 거부한다.
 - `verification.*`·`blocked.*`·`closure.*`는 `task set`으로 직접 수정하지 않고 전용 명령을 쓴다.
-- 현재 구현 범위는 상태머신(코어)과 Codex 핸드오프 dispatcher다. 자동 HTTP 검증 하니스 `task verify`는 아직 미구현이다.
+- 구현 범위는 상태머신(코어), Codex 핸드오프 dispatcher, 자동 HTTP 검증 하니스 `task verify` 셋이다.
+- `task verify`는 REVIEW에서 `.duet/verify.json`을 읽어 비파괴 스모크(GET/HEAD 전용)를 돌리고 결과를 `verification`에 직접 쓴다. 설정이 없는 검사는 건너뛰고 `PARTIAL`이 되며, `PARTIAL`로 DONE에 가려면 여전히 `approve-partial`이 필요하다. 운영으로 읽히는 프로파일에서는 실행되지 않는다 — 그건 사람 게이트다. 자세한 규칙은 [pipeline-design.md §9](pipeline-design.md)에 있다.

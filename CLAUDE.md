@@ -9,7 +9,7 @@ duetcode is an **npm package and a Claude Code plugin**, not an app. It ships a 
 Neither engine infers anything from its own path, so both behave identically under `node_modules/`, a checkout, or anywhere else. They also share one repo-root rule: `resolveRepoRoot` lives in `engine/task/lib.js` (`DUET_REPO_ROOT` → `git rev-parse --show-toplevel` → cwd) and `engine/handoff/lib.js` imports it — two independent copies would let the same command touch different `TASK.md` files. Handoff resolves `TASK.md` and `.duet/state/` against that root. The task CLI resolves its state file through `resolveTaskFile`, which layers on top: `TASK_STATE_FILE` → a `TASK.md` in cwd → the repo root's `TASK.md`. cwd wins over the root, so invoking from the repo root behaves exactly as it always did; only subdirectory invocations changed, from "file not found" to finding the repo's `TASK.md`. When none of the three exist, the error names the path it looked for and points at `TASK_STATE_FILE`.
 
 Two engines live under `engine/`, installed as separate directories but **not** mutually independent:
-- `engine/task/` — the `TASK.md` state-machine CLI (`index.js` + `lib.js`). Standalone; `--no-handoff` installs this alone.
+- `engine/task/` — the `TASK.md` state-machine CLI (`index.js` + `lib.js`, plus `verify.js` for the `task verify` smoke harness). Standalone; `--no-handoff` installs this alone.
 - `engine/handoff/` — the Codex handoff dispatcher (`dispatch.js`, `lib.js`, `build-prompt.js`, `parse-result.js`). Depends on task in both directions of the call: it imports `../task/lib` (`build-prompt.js:4`) and spawns the task CLI resolved via `require.resolve('../task/index.js')` (`lib.js`). There is no handoff-only install.
 
 ## Commands
@@ -25,7 +25,10 @@ npm run install:test
 npm run task:lint   # validates this repo's TASK.md, if one exists
 npm run version:sync   # align version references with package.json
 npm run version:check  # same, read-only: exits 1 on drift
+npm run lint:secrets   # reject credential-shaped *literals* anywhere in the repo
 ```
+
+`lint:secrets` exists because redaction fixtures have to look like real credentials, and GitHub's push protection judges by shape alone — a literal fixture once blocked the first push and cost a full `git filter-branch` history rewrite. The rule is therefore: **assemble such fixtures at runtime** (`'ASIA' + 'B'.repeat(16)`), never as a literal. `scripts/check-secret-literals.js` enforces it and `scripts/test/secret-literals.test.js` runs the same check under `npm test`, including samples that must be caught — a lint that matches nothing would otherwise pass silently. `ALLOWED_LITERALS` holds only values GitHub recognizes as public examples (currently one AWS example key), and a test pins its size, because a growing allowlist is how this check dies. It is not a security boundary; it only keeps the next push from turning into a history rewrite.
 
 `package.json`'s `version` is the source for the install specs in `README.md`, `skills/pipeline-install/SKILL.md`, and `templates/package-json-snippet.json`, and for `.claude-plugin/plugin.json`. `scripts/sync-version.js` keeps them aligned; `scripts/test/version-sync.test.js` catches drift. Historical versions in release records are intentionally excluded. Bump with `npm version <newversion> --no-git-tag-version` — the `version` lifecycle syncs the references but must not commit or tag, because committing and tagging a release is a human gate.
 
@@ -65,6 +68,8 @@ States: `IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE`, plus t
 - `reset` from a terminal state requires the TASK.md file itself to be committed clean (`requireCleanShare`). `CANCELLED`/`SUPERSEDED` may skip that when `closure.archiveRef` is set; `DONE` never may, because `archive` refuses any state but those two (`verifyArchiveRef`). This is what stops silent loss of a closed task's record.
 
 `start` replaces the prose body with `STARTER_BODY`, a placeholder skeleton — this is deliberate, so a new task can never inherit a stale previous task's write-up (see the code comment in `lib.js` referencing the past defect this fixed).
+
+`verify` (`engine/task/verify.js`) is the third and last writer of `verification`, and the only one where the CLI decides the status rather than recording what a human reports — so its surface is deliberately narrow. It is `REVIEW`-only like `record-verification`, reads `.duet/verify.json` from the repo root, and enforces four things that are not configurable away: a profile whose name reads as production is rejected even when listed in `allowedProfiles` (verifying production is a human gate, §10-1); only `GET`/`HEAD` with no body, no redirect following, and no origin outside `baseUrl`; the whole plan is built before any request is sent, so a destructive check in the config means *nothing* is sent; and only a server the harness itself spawned is ever killed, on every exit path. Missing configuration skips just that check and yields `PARTIAL` — otherwise "not configured" would be indistinguishable from "broken" — and zero executed checks is `PARTIAL`, never `PASSED`. Exceeding `maxDurationMs` **fails** the remaining checks rather than skipping them, the same rule handoff applies to timeouts. The evidence it writes carries an `exitCode` matching its own verdict, so `validate()`'s "PASSED with non-zero exit code" rejection applies to the harness too.
 
 `approve-partial` is the one interactive command: it requires both stdin and stdout to be a real TTY and reads a typed `APPROVE` confirmation — this is intentionally not scriptable.
 
