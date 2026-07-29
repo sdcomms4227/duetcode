@@ -6,6 +6,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const INSTALL = path.resolve(__dirname, '..', 'install.js');
+const { INSTALLED_DOCS, LEGACY_DOCS } = require(INSTALL);
 let counter = 0;
 
 function mkTarget() {
@@ -239,6 +240,55 @@ test('설치가 임시 파일을 남기지 않는다', () => {
 		assert.deepEqual(strays, [], '임시 파일이 남으면 안 된다');
 	} finally {
 		cleanup(target);
+	}
+});
+
+test('설치되는 docs/ 파일명이 고정되어 있다', () => {
+	// 대상 파일명은 공개 계약이다. 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 기존 설치
+	// 대상에 구 파일이 남은 채 신 파일이 추가되어 둘이 공존한다(cc-symphony → duetcode 개명 때 실제로
+	// 발생했고, 당시에는 이 단정이 없어 눈으로 확인해야 했다).
+	const target = mkTarget();
+	try {
+		assert.equal(run(target).status, 0);
+		const installed = fs.readdirSync(path.join(target, 'docs')).sort();
+		assert.deepEqual(installed, [
+			'duetcode-collaboration-protocol.md',
+			'duetcode-pipeline-design.md',
+			'duetcode-pipeline-workflow-example.md'
+		], 'docs/에 설치되는 파일 집합이 정확히 이것이어야 한다');
+		assert.deepEqual(INSTALLED_DOCS.map(([, name]) => name).sort(), installed, 'INSTALLED_DOCS와 실제 산출물이 일치해야 한다');
+	} finally {
+		cleanup(target);
+	}
+});
+
+test('개명 이전 문서가 남아 있으면 공존을 알리되 지우지 않는다', () => {
+	// 개명으로 파일명이 바뀌면 구·신 문서가 대상에 공존한다. 자동 삭제는 설치기의 권한이 아니므로
+	// 보고만 한다(OBSOLETE_SCRIPTS·tools/ 잔재와 같은 정책).
+	const target = mkTarget();
+	try {
+		fs.mkdirSync(path.join(target, 'docs'), { recursive: true });
+		for (const [old] of LEGACY_DOCS) fs.writeFileSync(path.join(target, 'docs', old), '구버전 문서\n');
+		const result = run(target);
+		assert.equal(result.status, 0);
+		for (const [old, current] of LEGACY_DOCS) {
+			assert.ok(result.stdout.includes(`docs/${old}`), `${old} 잔재를 알린다`);
+			assert.ok(fs.existsSync(path.join(target, 'docs', old)), `${old}를 말없이 지우지 않는다`);
+			assert.ok(fs.existsSync(path.join(target, 'docs', current)), `${current}는 새로 설치된다`);
+		}
+		assert.equal(fs.readFileSync(path.join(target, 'docs', LEGACY_DOCS[0][0]), 'utf8'), '구버전 문서\n', '구 파일 내용도 그대로다');
+	} finally {
+		cleanup(target);
+	}
+});
+
+test('LEGACY_DOCS의 대체 대상은 실제로 설치되는 파일이어야 한다', () => {
+	// 개명 시 LEGACY_DOCS만 고치고 INSTALLED_DOCS를 빠뜨리면(또는 그 반대) 사용자에게
+	// 존재하지 않는 파일로 옮기라고 안내하게 된다.
+	const current = new Set(INSTALLED_DOCS.map(([, name]) => name));
+	for (const [old, replacement] of LEGACY_DOCS) {
+		assert.ok(current.has(replacement), `${old}의 대체 파일 ${replacement}이 INSTALLED_DOCS에 없다`);
+		assert.ok(!current.has(old), `${old}는 더 이상 설치되지 않아야 한다`);
 	}
 });
 

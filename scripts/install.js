@@ -17,7 +17,6 @@ const { execFileSync } = require('node:child_process');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const TEMPLATES = path.join(PACKAGE_ROOT, 'templates');
-const DOCS = path.join(PACKAGE_ROOT, 'docs');
 
 // 과거 버전이 설치했던 스크립트 값. 기존 값이 여기에 **정확히** 일치할 때만 현재 값으로 갱신한다.
 // 사용자가 직접 손댄 스크립트는 갱신하지 않고 충돌로 보고만 한다(남의 저장소 설정을 말없이 바꾸지 않는다).
@@ -31,6 +30,25 @@ const LEGACY_SCRIPTS = {
 // 대상에는 필요 없다. 사용자 파일을 말없이 지우지 않고 알리기만 한다.
 const OBSOLETE_SCRIPTS = ['task:test', 'handoff:test'];
 
+// 대상 저장소 docs/에 설치되는 문서: [배포본 원본(패키지 루트 기준), 대상 파일명].
+// **대상 파일명은 공개 계약이다.** 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 기존 설치
+// 대상에 구 파일이 남은 채 신 파일이 추가되어 둘이 공존한다(cc-symphony → duetcode 개명 때 실제로
+// 발생했다). scripts/test/install.test.js가 이 목록을 고정하고, 이름을 바꾸면 LEGACY_DOCS에
+// 옛 이름을 추가해 잔재가 보고되도록 해야 한다.
+const INSTALLED_DOCS = [
+  ['templates/collaboration-protocol.md', 'duetcode-collaboration-protocol.md'],
+  ['docs/pipeline-design.md', 'duetcode-pipeline-design.md'],
+  ['docs/pipeline-workflow-example.md', 'duetcode-pipeline-workflow-example.md']
+];
+
+// 개명 이전에 설치되던 docs/ 파일명. 지우지 않고 알리기만 한다 —
+// OBSOLETE_SCRIPTS·tools/ 잔재와 같은 정책이다(남의 저장소 파일을 말없이 지우지 않는다).
+const LEGACY_DOCS = [
+  ['cc-symphony-collaboration-protocol.md', 'duetcode-collaboration-protocol.md'],
+  ['cc-symphony-pipeline-design.md', 'duetcode-pipeline-design.md'],
+  ['cc-symphony-pipeline-workflow-example.md', 'duetcode-pipeline-workflow-example.md']
+];
+
 // 부트스트랩이 배포본에서 읽는 원본들(패키지 루트 기준). package.json의 files가 이 경로를
 // 전부 포함해야 하며, scripts/test/package-meta.test.js가 그것을 강제한다.
 // v0.1.0에서 files에 docs가 빠져 문서 2개가 배포본에 없었고, 설치는 그대로 "완료"로 끝났다.
@@ -39,9 +57,7 @@ const PACKAGE_SOURCES = [
   'templates/task-lint.yml',
   'templates/gitignore-snippet.txt',
   'templates/package-json-snippet.json',
-  'templates/collaboration-protocol.md',
-  'docs/pipeline-design.md',
-  'docs/pipeline-workflow-example.md'
+  ...INSTALLED_DOCS.map(([source]) => source)
 ];
 
 function parseArgs(argv) {
@@ -191,13 +207,14 @@ function main() {
   appendGitignore(TARGET_ROOT);
 
   // 5. 규약·설계·예시 문서
-  ensureFileFromTemplate(path.join(TEMPLATES, 'collaboration-protocol.md'), path.join(TARGET_ROOT, 'docs', 'duetcode-collaboration-protocol.md'));
   // 원본 부재는 위 preflight가 이미 걸렀다(PACKAGE_SOURCES). 예전에는 여기서 존재 검사로 넘겨서,
   // package.json의 files에 docs가 빠진 배포본이 문서 2개를 말없이 누락한 채 "완료"로 끝났다
   // (v0.1.0에서 실제 발생). 검사를 없앤 것이 아니라 쓰기 이전으로 옮긴 것이다.
-  for (const [src, dest] of [['pipeline-design.md', 'duetcode-pipeline-design.md'], ['pipeline-workflow-example.md', 'duetcode-pipeline-workflow-example.md']]) {
-    ensureFileFromTemplate(path.join(DOCS, src), path.join(TARGET_ROOT, 'docs', dest));
+  for (const [source, name] of INSTALLED_DOCS) {
+    ensureFileFromTemplate(path.join(PACKAGE_ROOT, source), path.join(TARGET_ROOT, 'docs', name));
   }
+  // 개명 이전 파일명이 남아 있으면 신 파일과 공존한다. 지우지 않고 알린다.
+  const staleDocs = LEGACY_DOCS.filter(([old]) => fs.existsSync(path.join(TARGET_ROOT, 'docs', old)));
 
   // 요약
   console.log(log.join('\n'));
@@ -216,6 +233,12 @@ function main() {
     for (const name of obsolete) console.log(`  - scripts.${name}`);
     console.log('  직접 삭제하세요. 설치기는 사용자 스크립트를 지우지 않습니다.');
   }
+  if (staleDocs.length) {
+    console.log('\n주의 — 개명 이전 문서가 남아 있어 신·구 파일이 공존합니다:');
+    for (const [old, current] of staleDocs) console.log(`  - docs/${old}  →  docs/${current}로 대체됨`);
+    console.log('  내용을 확인한 뒤 구 파일을 직접 삭제하고, 참조하던 링크(CLAUDE.md/AGENTS.md 등)를 갱신하세요.');
+    console.log('  설치기는 사용자 문서를 지우지 않습니다.');
+  }
   if (fs.existsSync(path.join(TARGET_ROOT, 'tools', 'task'))) {
     console.log('\n주의 — 구버전 엔진 사본이 남아 있습니다: tools/');
     console.log('  엔진은 이제 node_modules의 duetcode에서 옵니다. `git rm -r tools/`로 정리하세요.');
@@ -227,4 +250,4 @@ if (require.main === module) {
   try { main(); } catch (e) { console.error('duet-init: ' + e.message); process.exitCode = 1; }
 }
 
-module.exports = { parseArgs, LEGACY_SCRIPTS, OBSOLETE_SCRIPTS, PACKAGE_SOURCES };
+module.exports = { parseArgs, LEGACY_SCRIPTS, OBSOLETE_SCRIPTS, PACKAGE_SOURCES, INSTALLED_DOCS, LEGACY_DOCS };
