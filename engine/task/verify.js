@@ -45,13 +45,16 @@ function readConfig(root) {
     // 샘플 경로는 계산해서 알려준다. 대상 저장소에서는 node_modules 아래에 있으므로,
     // 'templates/verify.example.json'이라고만 쓰면 그 저장소에 없는 경로를 가리키게 된다.
     const sample = path.join(__dirname, '..', '..', 'templates', 'verify.example.json');
-    // 디렉터리째로 없는 경우가 흔하다(`duet-init`은 .gitignore 항목만 추가하고 .duet/를 만들지는 않았다).
-    // 그래서 "복사하세요"만 말하지 않고 mkdir까지 함께 보여준다.
+    // 지금은 `duet-init`이 .duet/를 만들어 주지만, 그 이전에 설치한 저장소에는 디렉터리째로 없다.
+    // 그래서 "복사하세요"만 말하지 않고, 없을 때만 mkdir 단계를 덧붙여 보여준다.
+    const directory = path.dirname(file);
+    const steps = fs.existsSync(directory)
+      ? [`  copy: ${sample}  →  ${file}`]
+      : [`  1) mkdir: ${directory}`, `  2) copy : ${sample}`];
     fail([
       `검증 설정이 없습니다: ${file}`,
-      '다음 두 단계로 만드세요(이 파일은 커밋하지 않습니다):',
-      `  1) mkdir: ${path.dirname(file)}`,
-      `  2) copy : ${sample}`
+      '다음과 같이 만드세요(이 파일은 커밋하지 않습니다):',
+      ...steps
     ].join('\n'));
   }
   let config;

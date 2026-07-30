@@ -430,13 +430,30 @@ test('설정 파일이 없으면 무엇을 만들어야 하는지 알린다', ()
     assert.match(result.stderr, /검증 설정이 없습니다/);
     // 샘플 경로는 실제로 존재하는 파일을 가리켜야 한다. 대상 저장소에서는 node_modules 아래이므로
     // 'templates/...' 같은 상대 경로를 그대로 안내하면 그 저장소에 없는 경로를 알려주게 된다.
-    const sample = result.stderr.match(/copy\s*:\s*(.+)/)?.[1]?.trim();
+    const sample = result.stderr.match(/copy\s*:\s*([^\n→]+)/)?.[1]?.trim();
     assert.ok(sample && fs.existsSync(sample), `안내한 샘플 경로가 실재해야 한다: ${sample}`);
-    // 디렉터리째로 없는 경우가 흔하므로 mkdir 대상도 함께 알려준다.
-    const mkdirTarget = result.stderr.match(/mkdir\s*:\s*(.+)/)?.[1]?.trim();
-    assert.ok(mkdirTarget && mkdirTarget.endsWith('.duet'), `mkdir 대상을 알려야 한다: ${mkdirTarget}`);
+    // .duet/가 이미 있으면(duet-init이 만들어 준 정상 설치) mkdir을 시키지 않는다 —
+    // 이미 있는 디렉터리를 만들라고 안내하면 안내 자체를 못 믿게 된다.
+    assert.doesNotMatch(result.stderr, /mkdir/);
     // 설정이 없다고 verification을 건드리면 안 된다(원래 값 보존).
     assert.match(fs.readFileSync(file, 'utf8'), /updated: 2026-07-14T00:00:00Z/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// duet-init 이전에 설치한 저장소에는 .duet/가 아예 없다. 그때는 "복사하세요"만으로는 실행되지 않으므로
+// mkdir 대상까지 알려야 한다 — 실설치 스모크에서 실제로 걸렸던 지점이다.
+test('.duet/가 없으면 mkdir 대상까지 알린다', () => {
+  const { dir, file } = repo(null);
+  fs.rmSync(path.join(dir, '.duet'), { recursive: true, force: true });
+  try {
+    const result = runCliSync(dir, file, ['verify']);
+    assert.equal(result.status, 1);
+    const mkdirTarget = result.stderr.match(/mkdir\s*:\s*(.+)/)?.[1]?.trim();
+    assert.ok(mkdirTarget && mkdirTarget.endsWith('.duet'), `mkdir 대상을 알려야 한다: ${mkdirTarget}`);
+    const sample = result.stderr.match(/copy\s*:\s*([^\n→]+)/)?.[1]?.trim();
+    assert.ok(sample && fs.existsSync(sample), `안내한 샘플 경로가 실재해야 한다: ${sample}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
