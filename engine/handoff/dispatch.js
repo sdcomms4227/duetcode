@@ -141,6 +141,46 @@ function buildCodexInvocation(command, mode, sessionId) {
 	return { executable, args };
 }
 
+// 신호로 끊길 때 정리해야 하는 것. 신호는 프로세스 전역 사건이라 모듈 수준에 둔다.
+// dispatch()가 lock을, executeCodex()가 child를 등록하고 각자 끝날 때 지운다.
+const interruptState = { lock: null, child: null, group: false, installed: false, releaseLock: null };
+
+// SIGINT/SIGTERM/SIGHUP에서 codex 트리를 죽이고 lock을 풀고 나간다.
+//
+// **왜 필요한가**: codex를 POSIX에서 detached로 띄우면(트리 종료를 위해 필요하다) 자식이 자기 세션으로
+// 분리되어 터미널의 Ctrl-C를 **받지 않는다.** 핸들러가 없으면 dispatch만 죽고 codex는 고아가 되어
+// 저장소를 계속 수정한다 — 고치려던 것보다 나쁘다. 그래서 detached와 이 핸들러는 한 묶음이다.
+//
+// 덤으로 기존 결함도 사라진다: Node의 기본 SIGINT 처리는 finally를 실행하지 않아 dispatch.lock이
+// 남았다(다음 실행이 lockIsStale의 pid 생존 검사로 회수하긴 했다). 이제 즉시 해제한다.
+//
+// 핸들러 안에서는 무엇도 던지지 않는다. 여기서 예외가 나면 정리 자체가 무산된다.
+// exit을 주입할 수 있게 둔다 — 그러지 않으면 이 함수를 테스트하는 순간 테스트 러너가 죽는다.
+function handleInterrupt(signal, exit = process.exit) {
+	try {
+		if (interruptState.child) terminateProcessTree(interruptState.child, { group: interruptState.group });
+	} catch { /* 트리가 이미 사라졌다 */ }
+	try {
+		if (interruptState.lock && interruptState.releaseLock) interruptState.releaseLock(interruptState.lock);
+	} catch { /* lock 파일이 손상됐으면 stale 검사가 회수한다 */ }
+	interruptState.child = null;
+	interruptState.lock = null;
+	try {
+		process.stderr.write(`handoff: ${signal}으로 중단했습니다. Codex를 종료하고 lock을 해제했으며 Task는 IMPLEMENTING으로 남습니다.\n`);
+	} catch { /* stderr가 닫혔을 수 있다 */ }
+	// 결과 판정을 만들 수 없으므로 INCOMPLETE(5)로 끝낸다 — abort 제어 파일 경로와 같은 코드다.
+	return exit(EXIT_CODES.INCOMPLETE);
+}
+function installInterruptHandlers(release = releaseLock) {
+	if (interruptState.installed) return;
+	interruptState.installed = true;
+	interruptState.releaseLock = release;
+	// Windows에서 SIGTERM은 전달되지 않지만 등록 자체는 무해하다.
+	for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+		try { process.on(signal, () => handleInterrupt(signal)); } catch { /* 플랫폼이 지원하지 않는 신호 */ }
+	}
+}
+
 function executeCodex(invocation, options) {
 	return new Promise((resolve) => {
 		const parser = new ResultParser();
@@ -168,7 +208,7 @@ function executeCodex(invocation, options) {
 		const recordSpawnError = (error, child, kind) => {
 			if (kind === 'artifact') artifactError = artifactError || error;
 			else spawnError = spawnError || error;
-			if (child && !settled && !termination) termination = terminateProcessTree(child);
+			if (child && !settled && !termination) termination = terminateProcessTree(child, { group: interruptState.group });
 		};
 
 		// stdout 조립기 append+상한검사를 data 이벤트와 EOF tail이 공유한다(fail-closed면 false).
@@ -205,6 +245,7 @@ function executeCodex(invocation, options) {
 		const finish = (code, signal, child) => {
 			if (settled) return;
 			settled = true;
+			interruptState.child = null;
 			clearTimeout(timeoutTimer);
 			if (abortPollTimer) clearInterval(abortPollTimer);
 			if (hardStopTimer) clearTimeout(hardStopTimer);
@@ -242,7 +283,14 @@ function executeCodex(invocation, options) {
 			// codex.cmd이고, shell 없는 spawn은 확장자를 .exe만 붙여 찾으므로 그대로는 ENOENT로 죽었다.
 			// .exe·절대 경로·POSIX에서는 아무것도 바꾸지 않는다(engine/task/test/spawn.test.js가 고정).
 			const spawnable = resolveSpawn(invocation.executable, invocation.args);
+			// POSIX에서는 detached로 띄워 codex를 프로세스 그룹 리더로 만든다. 그래야 종료할 때 그룹째로
+			// 죽여 codex가 실행한 도구·셸까지 정리된다 — 안 하면 timeout·abort 후에도 자손이 남아
+			// 저장소를 계속 수정할 수 있다(abort가 약속한 것을 절반만 지키는 상태였다).
+			// Windows는 taskkill /T가 트리를 처리하고, detached는 새 콘솔을 뜻하므로 쓰지 않는다.
+			// detached는 터미널의 Ctrl-C가 codex에 닿지 않게 만들므로 installInterruptHandlers와 한 묶음이다.
+			const detached = process.platform !== 'win32';
 			child = spawn(spawnable.executable, spawnable.args, {
+				detached,
 				cwd: REPO_ROOT,
 				env: {
 					...options.env,
@@ -254,6 +302,8 @@ function executeCodex(invocation, options) {
 				windowsHide: true,
 				...spawnable.options
 			});
+			interruptState.child = child;
+			interruptState.group = detached;
 		} catch (error) {
 			spawnError = error;
 			resolve({
@@ -302,7 +352,7 @@ function executeCodex(invocation, options) {
 
 		timeoutTimer = setTimeout(() => {
 			timedOut = true;
-			termination = terminateProcessTree(child);
+			termination = terminateProcessTree(child, { group: interruptState.group });
 			hardStopTimer = setTimeout(() => {
 				child.stdout.destroy();
 				child.stderr.destroy();
@@ -322,7 +372,7 @@ function executeCodex(invocation, options) {
 			}
 			if (!requested) return;
 			aborted = true;
-			termination = terminateProcessTree(child);
+			termination = terminateProcessTree(child, { group: interruptState.group });
 			hardStopTimer = setTimeout(() => {
 				child.stdout.destroy();
 				child.stderr.destroy();
@@ -497,6 +547,10 @@ async function dispatch(options, runtime = {}) {
 		initialStatus: initialTask.status,
 		timeoutMs
 	});
+	// lock을 잡은 직후에 등록한다. 신호는 이 다음 어느 시점에도 올 수 있고, 그때 lock이 남으면
+	// 다음 실행이 stale 판정을 기다려야 한다.
+	interruptState.lock = lock;
+	installInterruptHandlers(runtime.releaseLock || releaseLock);
 	let run = null;
 	let artifacts = null;
 
@@ -644,6 +698,7 @@ async function dispatch(options, runtime = {}) {
 		}
 		throw error;
 	} finally {
+		interruptState.lock = null;
 		// lock 파일이 손상되면 releaseLock이 STATE_INVALID를 던진다. finally에서 그대로 새어 나가면
 		// 원래 실패 원인(성공 시에는 판정 결과까지)을 덮어 INTERNAL로 뭉갠다 — 해제 실패는 경고로만 남긴다.
 		try {
@@ -685,5 +740,8 @@ module.exports = {
 	measureRepository,
 	parseArgs,
 	terminateProcessTree,
+	handleInterrupt,
+	installInterruptHandlers,
+	interruptState,
 	usage
 };
