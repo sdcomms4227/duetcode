@@ -49,6 +49,20 @@ test('부트스트랩이 읽는 원본이 모두 존재하고 files에 포함된
 	}
 });
 
+test('런타임이 안내하는 샘플 설정도 배포본에 포함된다', () => {
+	// `task verify`는 설정이 없을 때 "이 파일을 복사하라"며 패키지 안의 경로를 계산해 알려준다.
+	// 그 원본은 부트스트랩이 읽지 않으므로 PACKAGE_SOURCES에 없고, 지금은 files의 'templates'
+	// 통짜 항목 덕에 우연히 배포되고 있을 뿐이다 — files를 개별 항목으로 좁히는 순간, 안내는
+	// 배포본에 없는 경로를 가리키게 된다(v0.1.0의 docs 누락과 같은 형태다).
+	const sample = 'templates/verify.example.json';
+	const source = fs.readFileSync(path.join(ROOT, 'engine', 'task', 'verify.js'), 'utf8');
+	assert.match(source, /'verify\.example\.json'/, 'verify가 안내하는 파일명이 바뀌면 이 테스트도 함께 고쳐야 한다');
+	assert.ok(fs.existsSync(path.join(ROOT, sample)), `안내 대상 원본이 없다: ${sample}`);
+	const files = read('package.json').files;
+	const covered = files.some((entry) => sample === entry || sample.startsWith(entry.replace(/\/$/, '') + '/'));
+	assert.ok(covered, `${sample}이 files에 포함되지 않아 배포본에서 빠진다`);
+});
+
 test('대상 저장소용 스니펫이 참조하는 실행 파일은 bin에 선언되어 있다', () => {
 	const pkg = read('package.json');
 	const snippet = read('templates', 'package-json-snippet.json');
