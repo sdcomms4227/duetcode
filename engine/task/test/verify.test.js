@@ -171,6 +171,46 @@ test('연결할 수 없는 대상은 FAILED다(무응답을 통과로 해석하�
   assert.match(report.results[0].reason, /요청 실패/);
 });
 
+test('본문 중간에 연결이 끊기면 무한 대기하지 않고 실패한다', async () => {
+  // 실측 이벤트 순서: res.aborted → req.close → res.error(ECONNRESET) → res.close. 'end'는 오지 않고
+  // req의 'error'도 오지 않는다. 예전에는 그 둘만 들어서 Promise가 영원히 미결로 남았고,
+  // duet-task verify가 조용히 멈춰 REVIEW를 붙잡았다 — 이 하니스가 낼 수 있는 최악의 결과다.
+  const { server, baseUrl } = await serve((req, res) => {
+    res.writeHead(200, { 'content-length': '1000' }); // 실제로 보내는 것보다 크게 예고한다
+    res.write('x'.repeat(10));
+    setTimeout(() => res.socket.destroy(), 30);
+  });
+  try {
+    const started = Date.now();
+    const report = await runVerify({ config: config(baseUrl, { checkTimeoutMs: 2000, maxDurationMs: 4000 }) });
+    assert.equal(report.status, 'FAILED');
+    assert.match(report.results[0].reason, /요청 실패/);
+    assert.ok(Date.now() - started < 3000, `예산 안에 끝나야 한다(소요 ${Date.now() - started}ms)`);
+  } finally {
+    await close(server);
+  }
+});
+
+test('응답이 계속 흘러도 예산을 넘기면 끊는다', async () => {
+  // `timeout` 옵션은 소켓 **비활성** 타임아웃이다. 서버가 조금씩 계속 보내면 활성 상태라 발동하지 않고,
+  // maxDurationMs는 검사 사이에만 확인된다. 그 틈을 독립 타이머가 막는다.
+  const timers = [];
+  const { server, baseUrl } = await serve((req, res) => {
+    res.writeHead(200, { 'content-length': '100000' });
+    timers.push(setInterval(() => { try { res.write('x'.repeat(10)); } catch { /* 끊긴 뒤 */ } }, 100));
+  });
+  try {
+    const started = Date.now();
+    const report = await runVerify({ config: config(baseUrl, { checkTimeoutMs: 400 }) });
+    const elapsed = Date.now() - started;
+    assert.equal(report.status, 'FAILED');
+    assert.ok(elapsed < 2500, `비활성 타임아웃에 의존하지 않고 끊어야 한다(소요 ${elapsed}ms)`);
+  } finally {
+    for (const timer of timers) clearInterval(timer);
+    await close(server);
+  }
+});
+
 // --- 최대 실행 시간 --------------------------------------------------------
 
 test('최대 실행 시간을 넘기면 남은 검사는 건너뜀이 아니라 실패다', async () => {

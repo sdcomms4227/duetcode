@@ -151,15 +151,40 @@ function planCheck(config, base, check, index) {
 }
 
 // 요청 하나. 리다이렉트를 따라가지 않고, 응답 본문은 버린다(내용 검증은 이 하니스의 범위가 아니다).
+//
+// **이 함수는 반드시 유한 시간 안에 settle해야 한다.** 예전에는 `res`의 'end'와 `req`의 'error'만
+// 들었는데, 서버가 헤더를 보낸 뒤 본문 중간에 소켓을 끊으면(실측) 이렇게 된다:
+//   res.aborted → req.close → **res.error(ECONNRESET)** → res.close, 그리고 'end'는 오지 않는다.
+// `req`의 'error'로는 오지 않으므로 Promise가 영원히 미결로 남았고, `duet-task verify`가 무한 대기했다.
+// 게다가 `timeout` 옵션은 소켓 **비활성** 타임아웃이라 소켓이 파괴된 뒤에는 발동하지 않고,
+// maxDurationMs는 검사 **사이**에만 확인하므로 둘 다 이 상황을 끊지 못했다.
+// 그래서 (1) res의 error·close를 함께 받고 (2) 어떤 이벤트가 오든 예산을 넘기지 않는 독립 타이머를 둔다.
+// 검증이 조용히 멈춰 REVIEW를 붙잡는 것이 이 하니스가 낼 수 있는 최악의 결과다.
 function request({ method, url, headers, timeoutMs }) {
   const client = url.protocol === 'https:' ? https : http;
   return new Promise((resolve) => {
+    let settled = false;
+    let hardStop = null;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (hardStop) clearTimeout(hardStop);
+      resolve(result);
+    };
     const req = client.request(url, { method, headers, timeout: timeoutMs }, (res) => {
       res.resume();
-      res.on('end', () => resolve({ statusCode: res.statusCode }));
+      res.on('end', () => finish({ statusCode: res.statusCode }));
+      res.on('error', (error) => finish({ error: `응답이 끊겼습니다: ${error.message}` }));
+      // 정상 종료에서도 'end' 뒤에 'close'가 오지만, settled 가드가 있으므로 첫 결과가 이긴다.
+      res.on('close', () => finish({ error: '응답이 끝나기 전에 연결이 닫혔습니다' }));
     });
     req.on('timeout', () => { req.destroy(new Error(`응답이 ${timeoutMs}ms 안에 오지 않았습니다`)); });
-    req.on('error', (error) => resolve({ error: error.message }));
+    req.on('error', (error) => finish({ error: error.message }));
+    // 소켓 타임아웃보다 조금 늦게 둬서, 가능하면 더 구체적인 사유가 먼저 기록되게 한다.
+    hardStop = setTimeout(() => {
+      req.destroy();
+      finish({ error: `${timeoutMs}ms 안에 응답이 끝나지 않았습니다` });
+    }, timeoutMs + 500);
     req.end();
   });
 }
