@@ -17,7 +17,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const SKIP_DIRS = new Set(['node_modules', '.git', '.duet', '.github/workflows/.cache']);
+// 스캔하지 않는 디렉터리. **점으로 시작한다고 건너뛰지 않는다** — 예전에는 `.github`만 예외로 두고
+// 점 디렉터리를 전부 제외했는데, 그러면 배포 대상인 `.claude-plugin/`이 검사되지 않았다(실측 확인).
+// 규칙은 옳은데 walk가 파일에 도달하지 못하는 형태였고, 그건 "조용히 통과하는 검사"와 같다.
+// 여기 남은 셋은 각각 이유가 있다: node_modules는 남의 코드, .git은 객체 저장소(형식 검사 대상이 아니며
+// 이력의 리터럴은 이 린트가 막을 수 있는 것이 아니다), .duet은 gitignore된 런타임 상태다.
+const SKIP_DIRS = new Set(['node_modules', '.git', '.duet']);
 // 텍스트만 본다. 바이너리는 형식 검사 대상이 아니다.
 const SCAN_EXTENSIONS = new Set(['.js', '.json', '.md', '.txt', '.yml', '.yaml', '.mjs', '.cjs']);
 
@@ -40,7 +45,6 @@ const ALLOWED_LITERALS = new Set([
 
 function walk(dir, out) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') && entry.name !== '.github') continue;
     if (SKIP_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, out);
@@ -83,4 +87,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { scanRepo, scanFile, PATTERNS, ALLOWED_LITERALS };
+module.exports = { scanRepo, scanFile, PATTERNS, ALLOWED_LITERALS, SKIP_DIRS };
