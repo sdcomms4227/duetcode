@@ -98,6 +98,8 @@ Dispatch's own exit code says *why* a run did not complete — this is distinct 
 | 4 | `TRANSPORT` | Codex could not be started or fed, or the stream reported a transport failure |
 | 5 | `INCOMPLETE` | Codex ran but the result is not a success: operator abort, abnormal exit, model-reported failure, REVIEW not reached, `task lint` failed, git state unmeasurable, the Active Task changed mid-run, or no `thread_id` was captured |
 
+**Interrupting with Ctrl-C is handled, not left to the shell.** On POSIX codex is spawned `detached` so its whole process tree can be killed — which also means the terminal's SIGINT no longer reaches it. The dispatcher therefore handles `SIGINT`/`SIGTERM`/`SIGHUP` itself: it kills the codex tree, releases the lock, and exits `INCOMPLETE` (5), the same code the abort file path uses. No `result.json` is written for an interrupted run (there is no verdict to record) and the task stays `IMPLEMENTING`.
+
 **Exit 0 alone is not proof of success.** Before reporting success the dispatcher measures the front-matter status, `task lint`, and `git status` — a run that exits 0 without reaching `REVIEW` is reported as `INCOMPLETE`.
 
 ## Layout
