@@ -78,10 +78,21 @@ function did(action, target) { log.push(`  [${action}] ${target}`); }
 let TARGET_ROOT;
 function rel(p) { return path.relative(TARGET_ROOT, p).replaceAll('\\', '/'); }
 
+// TASK.md의 branch를 정한다. 부트스트랩은 **커밋이 하나도 없는 저장소**(`git init` 직후)에서 도는 것이
+// 정상 경로인데, 거기서 `rev-parse --abbrev-ref HEAD`는 실패한다 — HEAD가 아직 아무 커밋도 가리키지 않기
+// 때문이다. 그러면 두 가지가 어긋났다(둘 다 실측): ① 기본 브랜치가 main이 아닌 저장소(`git init -b develop`)에
+// 'main'이 적혀, 단일 소스가 사실과 다른 브랜치를 말한다. ② execFileSync는 기본적으로 자식 stderr를
+// 부모로 흘려보내므로, 성공한 부트스트랩 출력 한가운데에 git의 fatal 메시지가 찍힌다.
+// `symbolic-ref --short HEAD`는 커밋 이전에도 답하므로 이것을 먼저 쓰고, detached HEAD(심볼릭이 아니라
+// 실패한다)에서만 기존 명령으로 내려간다. stderr는 삼킨다 — 두 실패 모두 폴백으로 처리되는 정상 경로다.
 function gitBranch(cwd) {
-  try {
-    return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8' }).trim() || 'main';
-  } catch { return 'main'; }
+  for (const args of [['symbolic-ref', '--short', 'HEAD'], ['rev-parse', '--abbrev-ref', 'HEAD']]) {
+    try {
+      const branch = execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      if (branch && branch !== 'HEAD') return branch;
+    } catch { /* 다음 후보로 */ }
+  }
+  return 'main';
 }
 
 // 대상 저장소 파일은 임시 파일에 쓴 뒤 rename한다. 이 저장소는 TASK.md(save)와 핸드오프 상태(writeJson)를

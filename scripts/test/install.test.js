@@ -315,6 +315,24 @@ test('LEGACY_DOCS의 대체 대상은 실제로 설치되는 파일이어야 한
 	}
 });
 
+test('커밋이 없는 저장소에서도 실제 브랜치를 적고 git 오류를 흘리지 않는다', () => {
+	// `git init` 직후가 부트스트랩의 정상 경로다. 그런데 커밋이 없으면 rev-parse --abbrev-ref HEAD는
+	// 실패하므로, 예전에는 (1) 기본 브랜치가 main이 아닌 저장소에 'main'이 적혀 단일 소스가 사실과
+	// 다른 브랜치를 말했고 (2) execFileSync가 자식 stderr를 그대로 흘려 성공한 출력 한가운데에
+	// git의 fatal 메시지가 찍혔다.
+	const target = mkTarget();
+	try {
+		const init = spawnSync('git', ['init', '-q', '-b', 'develop', target], { encoding: 'utf8' });
+		if (init.status !== 0) return; // git이 없는 환경에서는 검사할 것이 없다
+		const result = run(target);
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(fs.readFileSync(path.join(target, 'TASK.md'), 'utf8'), /^branch: develop$/m);
+		assert.doesNotMatch(result.stdout + result.stderr, /fatal:/, 'git 내부 오류가 사용자 출력에 새어 나오면 안 된다');
+	} finally {
+		cleanup(target);
+	}
+});
+
 test('TASK.md는 IDLE 상태로 생성되고 재실행 시 보존된다', () => {
 	const target = mkTarget();
 	assert.equal(run(target).status, 0);
