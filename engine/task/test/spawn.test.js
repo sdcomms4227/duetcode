@@ -111,8 +111,13 @@ test('win32에서 .cmd를 실제로 실행하고 인자가 보존된다', (t) =>
 // --- 프로세스 트리 종료 ----------------------------------------------------
 
 test('terminateProcessTree는 손자 프로세스까지 죽인다', async () => {
-  // Windows에는 프로세스 그룹 신호가 없어 부모만 죽이면 실제로 일하는 손자가 남는다.
-  // 이 함수가 dispatch(codex)와 verify(스모크 서버) 양쪽에서 쓰이는 이유다.
+  // 부모만 죽이면 실제로 일하는 손자가 남는다. 이 함수가 dispatch(codex)와 verify(스모크 서버)
+  // 양쪽에서 쓰이는 이유다.
+  //
+  // **플랫폼마다 방법이 다르고, POSIX는 호출자의 협력이 필요하다.** Windows는 taskkill /T가 트리를
+  // 처리하지만, POSIX에는 "자손 전체"를 가리키는 수단이 없어 프로세스 그룹을 죽여야 한다. 그러려면
+  // 자식이 detached로 띄워져 그룹 리더여야 하고, 호출자가 group: true로 그 사실을 알려야 한다.
+  // v0.3.1이 이 구분 없이 Windows 경로만 구현해 Linux에서 손자를 남겼고, CI가 그것을 잡았다.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `duet-tree-${process.pid}-`));
   try {
     const grandchild = path.join(dir, 'grandchild.js');
@@ -126,13 +131,16 @@ test('terminateProcessTree는 손자 프로세스까지 죽인다', async () => 
       require('node:child_process').spawn(process.execPath, [${JSON.stringify(grandchild)}], { stdio: 'ignore' });
       setInterval(() => {}, 1000);
     `);
-    const child = spawn(process.execPath, [parent], { stdio: 'ignore', windowsHide: true });
+    // POSIX에서는 detached로 띄워야 그룹 종료가 가능하다(verify의 startServer가 하는 것과 같다).
+    const group = process.platform !== 'win32';
+    const child = spawn(process.execPath, [parent], { stdio: 'ignore', windowsHide: true, detached: group });
     // 손자가 실제로 살아 있음을 확인한 뒤에 죽인다(살아 있지 않았다면 이 테스트는 아무것도 증명하지 못한다).
     for (let i = 0; i < 60 && !fs.existsSync(marker); i += 1) await new Promise((r) => setTimeout(r, 50));
     assert.ok(fs.existsSync(marker), '손자가 먼저 살아 있어야 한다');
 
-    const result = terminateProcessTree(child);
+    const result = terminateProcessTree(child, { group });
     assert.equal(result.attempted, true);
+    if (group) assert.equal(result.groupKilled, true, 'POSIX에서는 그룹 종료가 실제로 이뤄져야 한다');
     await new Promise((r) => setTimeout(r, 700));
 
     // marker의 mtime이 더 이상 갱신되지 않으면 손자가 죽은 것이다.
@@ -145,6 +153,20 @@ test('terminateProcessTree는 손자 프로세스까지 죽인다', async () => 
 });
 
 test('pid가 없으면 시도하지 않는다', () => {
-  assert.deepEqual(terminateProcessTree(null), { attempted: false, taskkillExitCode: null });
-  assert.deepEqual(terminateProcessTree({}), { attempted: false, taskkillExitCode: null });
+  assert.deepEqual(terminateProcessTree(null), { attempted: false, taskkillExitCode: null, groupKilled: false });
+  assert.deepEqual(terminateProcessTree({}), { attempted: false, taskkillExitCode: null, groupKilled: false });
+});
+
+test('group을 주지 않으면 POSIX에서 그룹 종료를 시도하지 않는다', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX 전용 — Windows는 taskkill /T를 쓴다');
+  // 추측으로 kill(-pid)를 부르면 pid가 우연히 다른 그룹의 pgid와 겹칠 때 남의 그룹을 죽인다.
+  // CI에서라면 러너 자신이 대상이 될 수 있다. 그래서 협력하지 않은 호출자에게는 시도하지 않는다.
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  try {
+    const result = terminateProcessTree(child);
+    assert.equal(result.attempted, true);
+    assert.equal(result.groupKilled, false, 'group 없이는 그룹 종료를 시도하지 않는다');
+  } finally {
+    try { child.kill('SIGKILL'); } catch { /* 이미 죽었다 */ }
+  }
 });

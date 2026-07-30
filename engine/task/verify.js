@@ -197,8 +197,12 @@ async function startServer(spec, base, deadline) {
   // 그대로 넘겨 `{"command": "npm", "args": ["run", "dev"]}`가 ENOENT/EINVAL로 죽었다 — 문서가 권하는
   // 사용법이 정작 Windows에서 안 되는 상태였다(CI 매트릭스에 있는 플랫폼이다).
   const invocation = resolveSpawn(spec.command, spec.args ?? []);
-  const child = spawn(invocation.executable, invocation.args, { stdio: 'ignore', shell: false, windowsHide: true, ...invocation.options });
-  const owned = { child, pid: child.pid, command: spec.command };
+  // POSIX에서는 detached로 띄워 자식을 프로세스 그룹 리더로 만든다. 그래야 종료할 때 그룹째로 죽여
+  // 손자(예: npm → node)까지 정리할 수 있다 — 안 하면 직계 자식만 죽고 실제로 듣고 있는 손자가 남는다.
+  // Windows는 taskkill /T가 트리를 처리하므로 detached가 필요 없다.
+  const detached = process.platform !== 'win32';
+  const child = spawn(invocation.executable, invocation.args, { stdio: 'ignore', shell: false, windowsHide: true, detached, ...invocation.options });
+  const owned = { child, pid: child.pid, command: spec.command, group: detached };
   let exited = null;
   child.on('exit', (code, signal) => { exited = { code, signal }; });
   owned.hasExited = () => exited != null;
@@ -225,18 +229,18 @@ async function startServer(spec, base, deadline) {
 async function stopServer(owned, graceMs = 3000) {
   if (!owned || !owned.child) return null;
   const alreadyGone = owned.child.exitCode != null || owned.child.signalCode != null || owned.hasExited?.();
-  if (alreadyGone) return { pid: owned.pid, exited: true, terminated: false, taskkillExitCode: null };
+  if (alreadyGone) return { pid: owned.pid, exited: true, terminated: false, taskkillExitCode: null, groupKilled: false };
   let termination = { attempted: false, taskkillExitCode: null };
-  try { termination = terminateProcessTree(owned.child); } catch { /* 트리가 이미 사라졌을 수 있다 */ }
+  try { termination = terminateProcessTree(owned.child, { group: owned.group === true }); } catch { /* 트리가 이미 사라졌을 수 있다 */ }
   const deadline = Date.now() + graceMs;
   while (Date.now() < deadline) {
     if (owned.child.exitCode != null || owned.child.signalCode != null || owned.hasExited?.()) {
-      return { pid: owned.pid, exited: true, terminated: termination.attempted, taskkillExitCode: termination.taskkillExitCode };
+      return { pid: owned.pid, exited: true, terminated: termination.attempted, taskkillExitCode: termination.taskkillExitCode, groupKilled: termination.groupKilled === true };
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   // 여기까지 오면 종료를 확인하지 못했다. 조용히 성공으로 적지 않는다.
-  return { pid: owned.pid, exited: false, terminated: termination.attempted, taskkillExitCode: termination.taskkillExitCode };
+  return { pid: owned.pid, exited: false, terminated: termination.attempted, taskkillExitCode: termination.taskkillExitCode, groupKilled: termination.groupKilled === true };
 }
 
 async function runVerify({ root = resolveRepoRoot().root, config: injected } = {}) {

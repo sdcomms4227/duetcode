@@ -94,19 +94,28 @@ function resolveRepoRoot(env = process.env, cwd = process.cwd()) {
 // 손자(예: npm → node)가 남아 포트를 물고 있다. taskkill /T로 트리를 지우고, 그 뒤 SIGKILL로 마무리한다.
 // handoff의 dispatch(codex 종료)와 task의 verify(스모크 서버 종료)가 **같은 함수를 쓴다** — 예전에는
 // dispatch에만 있어서 나중에 만든 verify가 SIGTERM 하나로 끝냈고, 같은 문제에 규칙이 두 벌이었다.
-function terminateProcessTree(child) {
-  if (!child?.pid) return { attempted: false, taskkillExitCode: null };
+// **POSIX에서 트리 종료는 호출자의 협력이 필요하다.** `taskkill /T`는 Windows 전용이고, POSIX에는
+// "자손 전체"를 가리키는 방법이 없다. 대신 프로세스 그룹을 죽일 수 있는데(`kill(-pid)`), 그러려면
+// 자식이 **그룹 리더**여야 한다 — 즉 `spawn(..., { detached: true })`로 띄웠어야 한다. 그래서 그룹
+// 종료는 `group: true`를 준 호출자에게만 시도한다. 추측으로 `kill(-pid)`를 부르면 pid가 우연히 다른
+// 그룹의 pgid와 겹칠 때 **남의 프로세스 그룹을 죽인다** — CI에서라면 러너 자신을 죽일 수 있다.
+// (이 구분이 없던 v0.3.1은 Linux에서 손자를 남겼고, CI가 그것을 잡았다. Windows에서만 돌려 놓쳤다.)
+function terminateProcessTree(child, { group = false } = {}) {
+  if (!child?.pid) return { attempted: false, taskkillExitCode: null, groupKilled: false };
   let taskkillExitCode = null;
+  let groupKilled = false;
   if (process.platform === 'win32') {
     const killed = spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
     taskkillExitCode = killed.status;
+  } else if (group) {
+    try { process.kill(-child.pid, 'SIGKILL'); groupKilled = true; } catch { /* 그룹이 이미 사라졌다 */ }
   }
   try {
     child.kill('SIGKILL');
   } catch {
-    // taskkill이 이미 트리를 지웠을 수 있다.
+    // taskkill이나 그룹 종료가 이미 트리를 지웠을 수 있다.
   }
-  return { attempted: true, taskkillExitCode };
+  return { attempted: true, taskkillExitCode, groupKilled };
 }
 // PATH + PATHEXT로 실행 파일을 찾는다(Windows에서 'npm' → 'npm.CMD'). 못 찾으면 null.
 function resolveOnPath(command, env = process.env) {
