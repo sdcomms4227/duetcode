@@ -244,13 +244,25 @@ async function startServer(spec, base, deadline) {
   const readyPath = spec.readyPath ?? '/';
   const readyUrl = new URL(base.pathname.replace(/\/$/, '') + readyPath, base);
   const readyBy = Math.min(Date.now() + (spec.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS), deadline);
-  while (Date.now() < readyBy) {
-    if (exited) fail(`검증 서버가 준비되기 전에 종료되었습니다(code=${exited.code}, signal=${exited.signal}).`);
-    const response = await request({ method: 'GET', url: readyUrl, headers: { accept: '*/*' }, timeoutMs: 1000 });
-    if (!response.error) return owned;
-    await new Promise((resolve) => setTimeout(resolve, 200));
+  // **준비에 실패하는 경로도 우리가 띄운 프로세스를 정리해야 한다.** runVerify의 finally는 `owned`를
+  // 돌려받은 뒤에만 동작하므로, 여기서 그냥 throw하면 자식을 아는 사람이 아무도 없다 — 서버는 포트를
+  // 물고 살아남고, stdio가 붙어 있어 부모 이벤트 루프도 비지 않으므로 `duet-task verify`는 오류를
+  // 출력한 뒤 그대로 매달린다(실측). 무한 대기는 이 하니스가 낼 수 있는 최악의 결과다(§request 참조).
+  try {
+    while (Date.now() < readyBy) {
+      if (exited) fail(`검증 서버가 준비되기 전에 종료되었습니다(code=${exited.code}, signal=${exited.signal}).`);
+      const response = await request({ method: 'GET', url: readyUrl, headers: { accept: '*/*' }, timeoutMs: 1000 });
+      if (!response.error) return owned;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    fail(`검증 서버가 제한 시간 안에 응답하지 않았습니다: ${readyUrl}`);
+  } catch (error) {
+    await stopServer(owned);
+    // 종료를 확인하지 못했더라도(stopServer가 exited: false를 돌려주는 경우) 핸들은 놓아준다.
+    // 원인은 이미 error로 보고되므로, 그 위에 무한 대기까지 얹지 않는다.
+    try { owned.child.unref(); } catch { /* 이미 사라진 자식 */ }
+    throw error;
   }
-  fail(`검증 서버가 제한 시간 안에 응답하지 않았습니다: ${readyUrl}`);
 }
 
 // 소유권 확인 후 종료하고, **끝났는지 확인한 사실만** 돌려준다.

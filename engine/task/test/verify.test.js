@@ -337,6 +337,54 @@ test('서버가 준비되기 전에 죽으면 그 사실을 알린다', async ()
   }
 });
 
+test('준비 시간을 넘겨 실패해도 우리가 띄운 서버는 남지 않는다', async () => {
+  // 준비에 실패하는 경로는 runVerify에 owned를 돌려주지 못하므로 finally의 정리 대상이 되지 않았다.
+  // 그래서 서버가 살아남았고(포트 점유), stdio가 붙은 자식 때문에 CLI는 오류를 낸 뒤 그대로 매달렸다.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `duet-verify-hang-${process.pid}-`));
+  try {
+    const pidFile = path.join(dir, 'pid');
+    const script = path.join(dir, 'never-ready.js');
+    // 절대 듣지 않는 서버. 준비 확인은 반드시 타임아웃한다.
+    fs.writeFileSync(script, [
+      `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));`,
+      'setInterval(() => {}, 1000);'
+    ].join('\n'));
+    await assert.rejects(
+      () => runVerify({
+        config: config('http://127.0.0.1:1', { server: { command: process.execPath, args: [script], readyTimeoutMs: 1500 } })
+      }),
+      /검증 서버가 제한 시간 안에 응답하지 않았습니다/
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+    // kill(pid, 0)은 신호를 보내지 않고 존재만 확인한다. 살아 있으면 우리가 고아를 남긴 것이다.
+    let alive = true;
+    try { process.kill(pid, 0); } catch { alive = false; }
+    assert.equal(alive, false, '준비 실패 경로에서도 spawn한 프로세스는 종료되어야 한다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('준비 실패 후에도 CLI 프로세스가 스스로 끝난다', async () => {
+  // 위 테스트가 자식의 생존을 본다면, 이쪽은 사용자가 실제로 겪은 증상 — 오류를 출력하고도 종료하지
+  // 못하는 것 — 을 본다. 자식을 죽였더라도 핸들을 놓지 않으면 이벤트 루프가 비지 않는다.
+  const { dir, file } = repo(config('http://127.0.0.1:1', {
+    server: { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], readyTimeoutMs: 1500 }
+  }));
+  try {
+    const result = await Promise.race([
+      runCli(dir, file, ['verify']),
+      new Promise((resolve) => setTimeout(() => resolve({ status: 'HUNG' }), 20_000))
+    ]);
+    assert.notEqual(result.status, 'HUNG', 'verify가 오류 후에도 종료하지 않으면 REVIEW가 묶인다');
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /검증 서버가 제한 시간 안에 응답하지 않았습니다/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // --- CLI 통합 --------------------------------------------------------------
 
 function repo(verifyConfig, taskSource = share()) {
