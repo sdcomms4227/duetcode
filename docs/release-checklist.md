@@ -7,7 +7,7 @@
 
 ## 1. 게시 — **완료**
 
-`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.3.3`**.
+`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.4.0`**.
 
 > 이 절의 버전은 **손으로 갱신한다.** 자동 동기화(§8) 대상은 설치가 실제로 해석하는 참조뿐이고, 아래 경위 서술의 버전은 기록이라 치환하면 거짓이 된다.
 
@@ -233,6 +233,24 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 - 잔재(`task:test`·`handoff:test` 스크립트, `tools/` 디렉터리)는 **보고만 하고 지우지 않는다**(§6.0).
 
 ## 7. 다음 작업
+
+### v0.3.3 → v0.4.0 — 핸드오프의 POSIX 트리 종료, 그리고 그것이 끌고 온 의무
+
+**minor로 올린 이유**: 공개 계약(`EXIT_CODES`·CLI·`TASK.md` 스키마) 변경은 없지만, 핸드오프의 프로세스 수명과 신호 처리가 달라진다. pre-`1.0`에서 동작 변경은 minor에 싣는다.
+
+codex를 POSIX에서 `detached`로 띄워 그룹 리더로 만들고, 세 종료 지점(timeout·abort·내부 실패)에서 그룹째 종료한다. 그전에는 `taskkill /T`가 있는 Windows에서만 트리가 정리됐고, POSIX에서는 codex가 실행한 도구·셸이 남아 저장소를 계속 수정할 수 있었다 — **abort가 "지금 당장 멈춰라"를 약속하면서 절반만 지키는 상태였다.**
+
+> **`detached` 한 줄만 넣으면 고치려던 것보다 나빠진다.** `detached`는 codex를 자기 세션으로 분리해 **터미널의 Ctrl-C가 닿지 않게** 만든다. 그전에는 codex가 dispatch와 같은 포그라운드 그룹에 있어서 Ctrl-C가 둘을 함께 죽였다 — 우연이지만 안전했다. 핸들러 없이 detached만 넣으면 dispatch만 죽고 codex는 고아가 되어 계속 파일을 쓴다. 그래서 `SIGINT`/`SIGTERM`/`SIGHUP` 핸들러가 함께 온다: 트리 종료 → lock 해제 → `INCOMPLETE`(5). **둘은 한 묶음이며 한쪽만 넣어서는 안 된다.**
+
+덤으로 기존 결함도 사라졌다. Node의 기본 신호 처리는 `finally`를 실행하지 않아 Ctrl-C로 끊으면 `dispatch.lock`이 남았다(다음 실행이 `lockIsStale`의 pid 생존 검사로 회수하긴 했다). 이제 즉시 해제된다.
+
+**테스트를 두 층으로 나눈 것이 이 작업의 요점이다.** 이 저장소는 Windows에서 개발되는데 고치는 대상은 POSIX 경로다 — v0.3.1에서 정확히 그 이유로 반증당했다.
+
+- 플랫폼 무관 단위 테스트: 실제 자식 프로세스를 띄워 정말 죽는지·lock을 푸는지·exit code가 5인지 확인한다. 가짜 객체는 "kill이 호출됐다"까지만 증명하므로 쓰지 않았다.
+- POSIX E2E: 손자를 띄우는 stub에 `SIGINT`를 보내 marker mtime이 멈추는지로 트리 종료를 확인한다. Windows에서는 다른 프로세스에 `SIGINT`를 보낼 수 없어 skip된다.
+- **CI 로그에서 그 skip된 테스트가 ubuntu에서 실제로 실행·통과했는지(`ok 40`)를 눈으로 확인했다.** 매트릭스가 green이어도 정작 그 변경을 검증하는 테스트가 모든 러너에서 skip이면 아무것도 확인하지 못한 것이다.
+
+**남은 것**: 신호로 끊긴 run은 결과 판정을 만들 수 없어 `result.json`이 없다. run 디렉터리의 프롬프트·`events.jsonl`·`metadata.json`은 남으므로 사후 확인은 가능하다. 필요해지면 중단 사실을 담은 최소 산출물을 남기는 쪽을 검토한다.
 
 ### v0.3.2 → v0.3.3 — 조용히 멈추는 검증, 그리고 npm으로 설치한 codex
 
