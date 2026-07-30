@@ -24,6 +24,6 @@
     "비밀값은 이 파일에 적지 않는다. credentials에는 '어느 환경변수를 볼지'만 적고 값은 환경변수로 준다.",
     "{records.readOnlyRecordId}처럼 path 안에 설정 경로를 참조할 수 있다. 값이 없거나 'replace-locally'면 그 검사만 건너뛰고 결과는 PARTIAL이 된다.",
     "requires: [\"env:SOME_VAR\"]로 특정 환경변수가 있을 때만 실행되는 검사를 정의할 수 있다.",
-    "server를 주면(command/args/readyPath) 하니스가 직접 띄우고, 자신이 띄운 프로세스만 종료한다. 이미 떠 있는 서버는 건드리지 않는다."
+    "server를 주면(command/args/readyPath) 하니스가 직접 띄우고, 자신이 띄운 프로세스 트리만 종료한다. 이미 떠 있는 서버는 건드리지 않는다. Windows의 npm 같은 .cmd도 그대로 쓸 수 있다 — 예: {\"command\": \"npm\", \"args\": [\"run\", \"dev\"], \"readyPath\": \"/health\"}."
   ]
 }

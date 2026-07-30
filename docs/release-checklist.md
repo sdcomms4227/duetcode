@@ -234,6 +234,24 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 
 ## 7. 다음 작업
 
+### v0.3.0 → v0.3.1 — 새로 넣은 코드가 기존 규율을 지키지 않던 자리들
+
+**patch로 올린 이유**: 공개 계약 변경이 없다. `verify` 리포트의 `spawnedServer` 모양이 바뀌지만(`stopped` → `command`·`exited`·`terminated`·`taskkillExitCode`), v0.3.0에서 하루 만에 잡은 것이라 이 필드에 의존하는 코드가 있을 수 없다.
+
+**세 건 모두 v0.3.0에서 내가 넣은 코드였고, 이 저장소가 오래 지켜온 규율을 새 코드가 어긴 형태였다.**
+
+1. **프로세스 트리 종료 규칙이 두 벌이었다.** dispatch에는 `terminateProcessTree`(Windows `taskkill /T /F` → `SIGKILL`)가 있는데, 나중에 만든 `verify`는 `child.kill('SIGTERM')` 하나로 끝냈다. `npm run dev` 형태의 서버는 부모만 죽고 실제로 듣고 있는 손자가 남아 포트를 물고 있다. 함수를 `engine/task/lib.js`로 옮겨 **두 엔진이 같은 것을 쓰게** 했다(의존 방향은 기존과 같은 handoff → task). 회귀 테스트는 손자가 실제로 살아 있음을 먼저 확인한 뒤 죽이고, marker 파일의 mtime이 더 이상 갱신되지 않는지로 판정한다 — 손자가 애초에 살아 있지 않았다면 그 테스트는 아무것도 증명하지 못하기 때문이다.
+
+2. **리포트가 확인하지 않은 것을 단정했다.** `spawnedServer.stopped: true`를 무조건 적었다. 이 리포트는 sha256으로 해시돼 `verification.evidence`에 증거로 남는데, 그러면 증거가 거짓을 말할 수 있다. 지금은 유예 시간 동안 종료를 기다려 보고 `exited`에 **확인한 사실만** 적는다. 확인하지 못하면 `false`로 남긴다.
+
+3. **`server` 설정이 Windows에서 못 쓰였다.** `shell: false`로 spawn해서 `{"command": "npm", ...}`가 `ENOENT`로 죽었다 — CI 매트릭스에 있고 실제 개발이 이루어지는 플랫폼에서, 문서가 권하는 사용법이 안 되는 상태였다.
+
+   > **여기서 측정이 세 번 필요했다.** ① `.cmd`를 `shell: false`로 spawn → `EINVAL`(Node의 셸 주입 수정 결과). ② `shell: true` → 실행은 되지만 공백 있는 경로가 깨지고 `DEP0190` 경고가 난다. ③ `cmd.exe /d /s /c`로 감싸되 내부 인용을 `\"`로 이스케이프 → 여전히 실패. 정답은 **인용부호 중복(`""`) + `windowsVerbatimArguments: true`** 였다. cmd는 `\"`를 모르고, verbatim이 없으면 Node가 자기 인용을 덧씌워 다시 깨진다. 추측으로는 어느 조합도 맞히지 못했을 것이다.
+
+**같은 릴리스에서 함께 고친 것**: `lint:secrets`가 점으로 시작하는 디렉터리를 전부 건너뛰어 **배포 대상인 `.claude-plugin/`을 검사하지 않았다.** 규칙은 옳은데 walk가 파일에 도달하지 못하는 형태였고, 그건 §2가 경계하는 "조용히 통과하는 검사"와 같다. 제외 목록은 이제 `node_modules`·`.git`·`.duet` 셋뿐이고, 테스트가 임시 트리에 위반을 심어 **제외가 실제로 동작하는지와 제외 밖에서는 반드시 잡히는지**를 함께 확인한다.
+
+`duet-init`은 `.duet/`를 만든다(실설치 스모크에서 걸렸다 — 없으면 `task verify` 설정을 두려는 사용자가 `mkdir`부터 해야 했다). gitignore 대상이라 git에는 아무것도 나타나지 않는다. 설정이 없을 때의 오류 메시지도 `mkdir`과 `copy` 두 단계를 함께 보여준다.
+
 ### `task verify` 구현 완료 (Tier 2)
 
 [pipeline-design.md](pipeline-design.md) §9의 검증 하니스를 구현했다(`engine/task/verify.js`, `engine/task/test/verify.test.js`). 이로써 §5의 verification 쓰기 경로 3개가 모두 실재한다 — 그전까지는 §5가 세 개를 세고 §9가 "미구현"이라 밝히는 어긋난 상태였고, **이 문서들은 대상 저장소로 배포되므로** 그 어긋남이 그대로 노출됐다(§2의 v0.2.2 항목 참조).

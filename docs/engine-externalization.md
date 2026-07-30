@@ -160,7 +160,22 @@ duetcode에 root `package.json` 신설(B6):
 
 `.omc`/`.omx`가 gitignore인 이유는 "AI 관련 파일이라서"가 아니라 **날려도 재설치되기 때문**이다. `tools/`는 재설치 가능하고, `TASK.md`는 재생성 불가능한 결정 기록이다. 이 문서의 범위는 전자뿐이다.
 
-(참고: 커밋 노이즈가 동기라면 해법은 gitignore가 아니라 전이마다 커밋하지 않는 운용이다. 여러 worktree 동시 진행이 동기라면 `TASK_STATE_FILE` env(`engine/handoff/lib.js:39`)로 파일을 분리하는 쪽이 정답이다.)
+(참고: 커밋 노이즈가 동기라면 해법은 gitignore가 아니라 전이마다 커밋하지 않는 운용이다.)
+
+### worktree를 동시에 쓰고 싶다면 — 새 기능이 필요하지 않다
+
+여러 worktree에서 Task를 동시에 진행하는 것이 동기라면, 답은 `TASK.md`를 gitignore하는 것이 아니라 **상태 파일을 분리하는 것**이다. 그리고 그 수단은 이미 있다 — 새로 만들 것이 없다.
+
+```bash
+# worktree마다 자기 상태 파일과 런타임 상태를 갖게 한다
+export DUET_REPO_ROOT="$PWD"                 # 두 엔진이 이 worktree를 저장소 루트로 본다
+export TASK_STATE_FILE="$PWD/TASK.md"        # 상태 파일을 명시(탐색 폴백에 의존하지 않는다)
+export HANDOFF_STATE_DIR="$PWD/.duet/state"  # lock·run 산출물도 분리 — 안 하면 lock을 서로 뺏는다
+```
+
+세 개를 **함께** 설정하는 것이 요점이다. `TASK_STATE_FILE`만 바꾸면 두 worktree가 같은 `HANDOFF_STATE_DIR`의 `dispatch.lock` 하나를 두고 다투게 되어, 동시 진행이라는 목적 자체가 무너진다. `DUET_REPO_ROOT`를 빼면 `git rev-parse --show-toplevel`이 worktree 루트를 돌려주므로 대개 맞지만, 하위 디렉터리에서 부를 때의 동작을 추측에 맡기지 않으려면 명시하는 편이 낫다.
+
+각 worktree의 `TASK.md`는 그 브랜치에 커밋된다 — 그래서 §6이 지키려는 것(사람이 `git diff TASK.md`로 DONE을 사후 검증한다)이 그대로 유지된다. gitignore 방안이 없애버리는 것이 바로 그 지점이다.
 
 ## 7. 결정 항목 — 모두 확정됨
 
