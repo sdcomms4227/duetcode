@@ -7,7 +7,7 @@ const { StringDecoder } = require('node:string_decoder');
 const { buildPrompt } = require('./build-prompt');
 // 프로세스 트리 종료는 task/lib에 있다. verify(스모크 서버)와 dispatch(codex)가 같은 문제를 풀기 때문에
 // 구현이 한 벌이어야 한다 — 의존 방향은 기존과 같다(handoff → task).
-const { terminateProcessTree } = require('../task/lib');
+const { terminateProcessTree, resolveSpawn } = require('../task/lib');
 const {
 	EXIT_CODES,
 	HandoffError,
@@ -238,7 +238,11 @@ function executeCodex(invocation, options) {
 
 		let child;
 		try {
-			child = spawn(invocation.executable, invocation.args, {
+			// resolveSpawn이 Windows의 .cmd/.bat을 실행 가능한 형태로 바꾼다. npm으로 설치한 codex는
+			// codex.cmd이고, shell 없는 spawn은 확장자를 .exe만 붙여 찾으므로 그대로는 ENOENT로 죽었다.
+			// .exe·절대 경로·POSIX에서는 아무것도 바꾸지 않는다(engine/task/test/spawn.test.js가 고정).
+			const spawnable = resolveSpawn(invocation.executable, invocation.args);
+			child = spawn(spawnable.executable, spawnable.args, {
 				cwd: REPO_ROOT,
 				env: {
 					...options.env,
@@ -247,7 +251,8 @@ function executeCodex(invocation, options) {
 				},
 				shell: false,
 				stdio: ['pipe', 'pipe', 'pipe'],
-				windowsHide: true
+				windowsHide: true,
+				...spawnable.options
 			});
 		} catch (error) {
 			spawnError = error;

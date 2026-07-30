@@ -192,6 +192,30 @@ if (process.argv.includes('--codex-stub')) {
 		return JSON.parse(fs.readFileSync(files[0], 'utf8'));
 	}
 
+	test('HANDOFF_CODEX_CMD가 .cmd여도 Codex를 실행한다', (context) => {
+		// npm으로 설치한 codex는 codex.cmd다. shell 없는 spawn은 확장자를 .exe만 붙여 찾으므로
+		// 예전에는 ENOENT로 죽었다 — Windows에서 그 방식으로 설치한 사용자는 핸드오프를 쓸 수 없었다.
+		// resolveSpawn이 cmd.exe로 감싸 준다. 여기서는 codex stub을 .cmd로 감싸 그 경로를 실제로 태운다.
+		if (process.platform !== 'win32') return context.skip('win32 전용 — .cmd는 Windows 개념이다');
+		const item = fixture();
+		try {
+			const launcher = path.join(item.root, 'codex-stub.cmd');
+			const lines = ['@echo off', `"${process.execPath}" "${__filename}" --codex-stub %*`, ''];
+			fs.writeFileSync(launcher, lines.join('\r\n'), 'utf8');
+			const result = spawnSync(process.execPath, [DISPATCH_CLI], {
+				cwd: REPO_ROOT,
+				encoding: 'utf8',
+				env: { ...environment(item, 'success'), HANDOFF_CODEX_CMD: launcher },
+				timeout: 20_000,
+				windowsHide: true
+			});
+			assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+			assert.equal(taskState(item).status, 'REVIEW');
+		} finally {
+			fs.rmSync(item.root, { recursive: true, force: true });
+		}
+	});
+
 	test('신규 위임과 명시 session resume을 stub으로 완주한다', () => {
 		const item = fixture();
 		try {
