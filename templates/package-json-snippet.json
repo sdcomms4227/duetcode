@@ -5,7 +5,7 @@
     "handoff": "duet-handoff"
   },
   "devDependencies": {
-    "duetcode": "github:sdcomms4227/duetcode#v0.3.2"
+    "duetcode": "github:sdcomms4227/duetcode#v0.3.3"
   },
   "engines": {
     "node": ">=18"
