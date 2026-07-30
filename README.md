@@ -39,7 +39,7 @@ Installing the plugin gives you the `/duetcode:task` and `/duetcode:handoff` com
 
 ```bash
 cd /path/to/your-repo
-npm i -D github:sdcomms4227/duetcode#v0.3.3
+npm i -D github:sdcomms4227/duetcode#v0.4.0
 npx duet-init          # bootstraps TASK.md, docs, CI, .gitignore entries
 npm install
 npm run task:lint
