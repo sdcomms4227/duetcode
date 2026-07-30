@@ -2,9 +2,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 const { buildPrompt } = require('./build-prompt');
+// 프로세스 트리 종료는 task/lib에 있다. verify(스모크 서버)와 dispatch(codex)가 같은 문제를 풀기 때문에
+// 구현이 한 벌이어야 한다 — 의존 방향은 기존과 같다(handoff → task).
+const { terminateProcessTree } = require('../task/lib');
 const {
 	EXIT_CODES,
 	HandoffError,
@@ -136,24 +139,6 @@ function buildCodexInvocation(command, mode, sessionId) {
 		args = [...prefix, 'exec', 'resume', '--json', '-c', SANDBOX_CONFIG, sessionId, '-'];
 	}
 	return { executable, args };
-}
-
-function terminateProcessTree(child) {
-	if (!child?.pid) return { attempted: false, taskkillExitCode: null };
-	let taskkillExitCode = null;
-	if (process.platform === 'win32') {
-		const killed = spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
-			stdio: 'ignore',
-			windowsHide: true
-		});
-		taskkillExitCode = killed.status;
-	}
-	try {
-		child.kill('SIGKILL');
-	} catch {
-		// taskkill may already have removed the process tree.
-	}
-	return { attempted: true, taskkillExitCode };
 }
 
 function executeCodex(invocation, options) {

@@ -90,6 +90,59 @@ function resolveRepoRoot(env = process.env, cwd = process.cwd()) {
   if (found.status === 0 && top) return { root: path.resolve(top), source: 'git' };
   return { root: path.resolve(cwd), source: 'cwd' };
 }
+// 자식 프로세스 트리를 종료한다. Windows에는 프로세스 그룹 신호가 없어 부모만 죽이면 실제로 일하는
+// 손자(예: npm → node)가 남아 포트를 물고 있다. taskkill /T로 트리를 지우고, 그 뒤 SIGKILL로 마무리한다.
+// handoff의 dispatch(codex 종료)와 task의 verify(스모크 서버 종료)가 **같은 함수를 쓴다** — 예전에는
+// dispatch에만 있어서 나중에 만든 verify가 SIGTERM 하나로 끝냈고, 같은 문제에 규칙이 두 벌이었다.
+function terminateProcessTree(child) {
+  if (!child?.pid) return { attempted: false, taskkillExitCode: null };
+  let taskkillExitCode = null;
+  if (process.platform === 'win32') {
+    const killed = spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    taskkillExitCode = killed.status;
+  }
+  try {
+    child.kill('SIGKILL');
+  } catch {
+    // taskkill이 이미 트리를 지웠을 수 있다.
+  }
+  return { attempted: true, taskkillExitCode };
+}
+// PATH + PATHEXT로 실행 파일을 찾는다(Windows에서 'npm' → 'npm.CMD'). 못 찾으면 null.
+function resolveOnPath(command, env = process.env) {
+  const extensions = (env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  for (const dir of (env.PATH || env.Path || '').split(path.delimiter).filter(Boolean)) {
+    for (const extension of extensions) {
+      const candidate = path.join(dir, command + extension);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+// cmd는 인용 규칙이 POSIX 셸과 달라, 인자를 각각 인용한 뒤 전체를 한 번 더 감싼다.
+// 내부 인용부호는 백슬래시가 아니라 **중복**으로 이스케이프한다(cmd는 \" 를 모른다).
+const quoteForCmd = (value) => (/[\s"^&|<>()%!]/.test(value) ? `"${String(value).replace(/"/g, '""')}"` : String(value));
+// spawn 인자를 플랫폼에 맞게 해석한다. Windows의 .cmd/.bat은 shell 없이는 실행할 수 없고(Node가 EINVAL로
+// 막는다 — 셸 주입 수정의 결과), shell: true는 Node가 인자를 이어 붙이기만 해서 공백 있는 경로가 깨지고
+// DEP0190 경고도 난다(둘 다 실측). 그래서 cmd.exe를 직접 부르고 **인용을 우리가 만든다**:
+// /s와 함께 쓰면 cmd는 명령줄 전체의 맨 앞·뒤 인용부호 한 쌍만 벗기므로, 개별 인자 인용이 그대로 보존된다.
+// windowsVerbatimArguments가 없으면 Node가 그 위에 자기 인용을 덧씌워 다시 깨진다.
+// .exe나 확장자 없는 이름, 경로가 박힌 명령은 손대지 않는다 — 바꿀 이유가 없는 경로는 그대로 둔다.
+function resolveSpawn(command, args = [], env = process.env, platform = process.platform) {
+  const direct = { executable: command, args, options: {} };
+  if (typeof command !== 'string' || !command) return direct;
+  if (platform !== 'win32') return direct;
+  const located = command.includes('/') || command.includes('\\') || path.extname(command)
+    ? command
+    : resolveOnPath(command, env) || command;
+  if (!/\.(cmd|bat)$/i.test(located)) return { ...direct, executable: located };
+  const line = [located, ...args].map(quoteForCmd).join(' ');
+  return {
+    executable: env.ComSpec || 'cmd.exe',
+    args: ['/d', '/s', '/c', `"${line}"`],
+    options: { windowsVerbatimArguments: true }
+  };
+}
 // TASK.md의 위치를 해석한다. 예전에는 cwd 상대 'TASK.md' 하나뿐이라, 서브디렉터리에서 duet-task를 부르면
 // 저장소의 TASK.md를 찾지 못하고 실패했다 — 같은 저장소에서 duet-handoff는 찾는데(자체 repo root 해석),
 // 두 엔진의 동작이 갈려 있었다. 탐색 순서는 기존 동작을 그대로 보존하도록 잡는다:
@@ -289,4 +342,4 @@ function resetBody(model) {
   if (idx >= 0) model.body = `${model.body.slice(0, idx + marker.length)}\n\n${STARTER_BODY}`;
   else model.body = `\n\n# TASK.md — Active Task 상태\n\n## Active Task\n\n${STARTER_BODY}`;
 }
-module.exports = { ACTIVE, TERMINAL, resolveRepoRoot, resolveTaskFile, PLACEHOLDER_VALUES, meaningfulContent, meaningful, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment, strayFrontMatter };
+module.exports = { ACTIVE, TERMINAL, terminateProcessTree, resolveOnPath, resolveSpawn, quoteForCmd, resolveRepoRoot, resolveTaskFile, PLACEHOLDER_VALUES, meaningfulContent, meaningful, EMPTY_VERIFICATION, STARTER_BODY, now, fail, load, save, get, set, git, validate, transition, verifyArchiveRef, parseSource, resetBody, issueSyncMarker, issueSyncBody, findIssueSyncComment, syncIssueComment, strayFrontMatter };

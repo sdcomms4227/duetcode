@@ -228,11 +228,59 @@ test('하니스가 띄운 서버만 종료하고, 실패 경로에서도 정리�
       })
     });
     assert.equal(report.status, 'FAILED', '검사는 실패했지만');
-    assert.ok(report.spawnedServer && report.spawnedServer.stopped, '실패 경로에서도 우리가 띄운 서버는 정리된다');
+    // 리포트는 sha256으로 해시돼 증거로 남는다. 그래서 "정리했다"가 아니라 "종료를 확인했다"만 적는다.
+    assert.equal(report.spawnedServer.exited, true, '실패 경로에서도 우리가 띄운 서버는 정리되고, 종료가 확인되어야 한다');
+    assert.equal(report.spawnedServer.terminated, true, '우리가 종료를 시도했다는 사실도 남는다');
     // 실제로 죽었는지 확인한다 — 보고만 하고 살려두면 다음 실행이 포트 충돌로 깨진다.
     await new Promise((resolve) => setTimeout(resolve, 500));
     const after = await runVerify({ config: config(`http://127.0.0.1:${port}`) }).catch((e) => e);
     assert.equal(after.status, 'FAILED', '서버가 죽었으므로 같은 포트 요청은 실패해야 한다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('서버가 손자 프로세스로 듣고 있어도 종료된다', async () => {
+  // 실제 형태는 `npm run dev` → node다. 부모만 죽이면 손자가 포트를 물고 남아 다음 실행이 깨진다.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `duet-verify-tree-${process.pid}-`));
+  const probe = await serve(() => {});
+  const port = new URL(probe.baseUrl).port;
+  await close(probe.server);
+  try {
+    const inner = path.join(dir, 'inner.js');
+    fs.writeFileSync(inner, `require('node:http').createServer((q, s) => s.writeHead(200).end('ok')).listen(${port}, '127.0.0.1');`);
+    const outer = path.join(dir, 'outer.js');
+    fs.writeFileSync(outer, `
+      require('node:child_process').spawn(process.execPath, [${JSON.stringify(inner)}], { stdio: 'ignore' });
+      setInterval(() => {}, 1000);
+    `);
+    const report = await runVerify({
+      config: config(`http://127.0.0.1:${port}`, {
+        server: { command: process.execPath, args: [outer], readyPath: '/health', readyTimeoutMs: 15_000 }
+      })
+    });
+    assert.equal(report.status, 'PASSED', '손자가 띄운 서버로도 검사는 통과한다');
+    assert.equal(report.spawnedServer.exited, true);
+    // 포트가 실제로 풀렸는지 본다 — 손자가 남아 있으면 여기서 드러난다.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const after = await runVerify({ config: config(`http://127.0.0.1:${port}`, { checkTimeoutMs: 1000 }) });
+    assert.equal(after.status, 'FAILED', '트리가 죽었으므로 같은 포트는 더 이상 응답하지 않아야 한다');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('서버가 준비되기 전에 죽으면 그 사실을 알린다', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `duet-verify-dead-${process.pid}-`));
+  try {
+    const script = path.join(dir, 'dies.js');
+    fs.writeFileSync(script, 'process.exit(3);');
+    await assert.rejects(
+      () => runVerify({
+        config: config('http://127.0.0.1:1', { server: { command: process.execPath, args: [script], readyTimeoutMs: 5000 } })
+      }),
+      /검증 서버가 준비되기 전에 종료되었습니다/
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -342,8 +390,11 @@ test('설정 파일이 없으면 무엇을 만들어야 하는지 알린다', ()
     assert.match(result.stderr, /검증 설정이 없습니다/);
     // 샘플 경로는 실제로 존재하는 파일을 가리켜야 한다. 대상 저장소에서는 node_modules 아래이므로
     // 'templates/...' 같은 상대 경로를 그대로 안내하면 그 저장소에 없는 경로를 알려주게 된다.
-    const sample = result.stderr.match(/복사해 만드세요\(이 파일은 커밋하지 않습니다\): (.+)/)?.[1]?.trim();
+    const sample = result.stderr.match(/copy\s*:\s*(.+)/)?.[1]?.trim();
     assert.ok(sample && fs.existsSync(sample), `안내한 샘플 경로가 실재해야 한다: ${sample}`);
+    // 디렉터리째로 없는 경우가 흔하므로 mkdir 대상도 함께 알려준다.
+    const mkdirTarget = result.stderr.match(/mkdir\s*:\s*(.+)/)?.[1]?.trim();
+    assert.ok(mkdirTarget && mkdirTarget.endsWith('.duet'), `mkdir 대상을 알려야 한다: ${mkdirTarget}`);
     // 설정이 없다고 verification을 건드리면 안 된다(원래 값 보존).
     assert.match(fs.readFileSync(file, 'utf8'), /updated: 2026-07-14T00:00:00Z/);
   } finally {

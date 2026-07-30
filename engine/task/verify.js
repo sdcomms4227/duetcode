@@ -22,7 +22,7 @@ const http = require('node:http');
 const https = require('node:https');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { resolveRepoRoot, fail, now } = require('./lib');
+const { resolveRepoRoot, resolveSpawn, terminateProcessTree, fail, now } = require('./lib');
 
 const CONFIG_RELATIVE = path.join('.duet', 'verify.json');
 // 기본 화이트리스트. 설정에서 넓힐 수 있지만, PRODUCTION_PROFILE에 걸리는 이름은 넓혀도 거부된다.
@@ -45,7 +45,14 @@ function readConfig(root) {
     // 샘플 경로는 계산해서 알려준다. 대상 저장소에서는 node_modules 아래에 있으므로,
     // 'templates/verify.example.json'이라고만 쓰면 그 저장소에 없는 경로를 가리키게 된다.
     const sample = path.join(__dirname, '..', '..', 'templates', 'verify.example.json');
-    fail(`검증 설정이 없습니다: ${file}\n샘플을 복사해 만드세요(이 파일은 커밋하지 않습니다): ${sample}`);
+    // 디렉터리째로 없는 경우가 흔하다(`duet-init`은 .gitignore 항목만 추가하고 .duet/를 만들지는 않았다).
+    // 그래서 "복사하세요"만 말하지 않고 mkdir까지 함께 보여준다.
+    fail([
+      `검증 설정이 없습니다: ${file}`,
+      '다음 두 단계로 만드세요(이 파일은 커밋하지 않습니다):',
+      `  1) mkdir: ${path.dirname(file)}`,
+      `  2) copy : ${sample}`
+    ].join('\n'));
   }
   let config;
   try { config = JSON.parse(raw); } catch (error) { fail(`검증 설정 JSON을 해석할 수 없습니다(${file}): ${error.message}`); }
@@ -186,10 +193,15 @@ function summarize(results) {
 
 // 서버를 직접 띄운다. **우리가 띄운 것만** 나중에 죽인다 — 이미 떠 있던 서버는 우리 소유가 아니다.
 async function startServer(spec, base, deadline) {
-  const child = spawn(spec.command, spec.args ?? [], { stdio: 'ignore', shell: false, windowsHide: true });
-  const owned = { child, pid: child.pid };
+  // resolveSpawn이 Windows의 .cmd/.bat(예: 'npm')을 실행 가능한 형태로 바꾼다. 예전에는 shell: false로
+  // 그대로 넘겨 `{"command": "npm", "args": ["run", "dev"]}`가 ENOENT/EINVAL로 죽었다 — 문서가 권하는
+  // 사용법이 정작 Windows에서 안 되는 상태였다(CI 매트릭스에 있는 플랫폼이다).
+  const invocation = resolveSpawn(spec.command, spec.args ?? []);
+  const child = spawn(invocation.executable, invocation.args, { stdio: 'ignore', shell: false, windowsHide: true, ...invocation.options });
+  const owned = { child, pid: child.pid, command: spec.command };
   let exited = null;
   child.on('exit', (code, signal) => { exited = { code, signal }; });
+  owned.hasExited = () => exited != null;
   const readyPath = spec.readyPath ?? '/';
   const readyUrl = new URL(base.pathname.replace(/\/$/, '') + readyPath, base);
   const readyBy = Math.min(Date.now() + (spec.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS), deadline);
@@ -202,11 +214,29 @@ async function startServer(spec, base, deadline) {
   fail(`검증 서버가 제한 시간 안에 응답하지 않았습니다: ${readyUrl}`);
 }
 
-// 소유권 확인 후 종료. pid가 있고, 우리가 spawn했고, 아직 살아 있을 때만 신호를 보낸다.
-// 이미 죽었거나(ESRCH) 권한이 없으면 조용히 넘어간다 — cleanup이 새 예외를 만들어 원인을 덮으면 안 된다.
-function stopServer(owned) {
-  if (!owned || !owned.child || owned.child.killed || owned.child.exitCode != null) return;
-  try { owned.child.kill('SIGTERM'); } catch { /* 이미 사라진 프로세스 */ }
+// 소유권 확인 후 종료하고, **끝났는지 확인한 사실만** 돌려준다.
+//
+// 예전에는 SIGTERM 하나를 보내고 리포트에 `stopped: true`를 무조건 적었다. 두 가지가 틀렸다.
+// (1) Windows에는 프로세스 그룹 신호가 없어 부모만 죽고 실제로 듣고 있는 손자가 남는다
+//     (`npm run dev` → node). terminateProcessTree를 쓰면 dispatch가 codex에 쓰는 것과 같은 처리가 된다.
+// (2) 리포트는 sha256으로 해시돼 verification.evidence에 증거로 남는다. 확인하지 않은 것을 단정하면
+//     증거가 거짓을 말한다. 그래서 종료를 기다려 보고, 확인되지 않으면 exited: false로 적는다.
+// 이미 죽었거나 권한이 없으면 조용히 넘어간다 — cleanup이 새 예외를 만들어 원래 실패 원인을 덮으면 안 된다.
+async function stopServer(owned, graceMs = 3000) {
+  if (!owned || !owned.child) return null;
+  const alreadyGone = owned.child.exitCode != null || owned.child.signalCode != null || owned.hasExited?.();
+  if (alreadyGone) return { pid: owned.pid, exited: true, terminated: false, taskkillExitCode: null };
+  let termination = { attempted: false, taskkillExitCode: null };
+  try { termination = terminateProcessTree(owned.child); } catch { /* 트리가 이미 사라졌을 수 있다 */ }
+  const deadline = Date.now() + graceMs;
+  while (Date.now() < deadline) {
+    if (owned.child.exitCode != null || owned.child.signalCode != null || owned.hasExited?.()) {
+      return { pid: owned.pid, exited: true, terminated: termination.attempted, taskkillExitCode: termination.taskkillExitCode };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  // 여기까지 오면 종료를 확인하지 못했다. 조용히 성공으로 적지 않는다.
+  return { pid: owned.pid, exited: false, terminated: termination.attempted, taskkillExitCode: termination.taskkillExitCode };
 }
 
 async function runVerify({ root = resolveRepoRoot().root, config: injected } = {}) {
@@ -225,6 +255,7 @@ async function runVerify({ root = resolveRepoRoot().root, config: injected } = {
 
   let owned = null;
   let results;
+  let stopped = null;
   try {
     if (config.server) {
       if (typeof config.server.command !== 'string' || !config.server.command.trim()) fail('server.command는 문자열이어야 합니다.');
@@ -233,7 +264,8 @@ async function runVerify({ root = resolveRepoRoot().root, config: injected } = {
     results = await runChecks(planned, deadline);
   } finally {
     // 성공·실패·예외 어느 경로로 끝나도 우리가 띄운 프로세스는 정리한다.
-    stopServer(owned);
+    // await한다 — 예전에는 동기 호출이라 종료를 확인하지 못한 채 리포트를 만들었다.
+    stopped = await stopServer(owned);
   }
 
   const summary = summarize(results);
@@ -244,7 +276,8 @@ async function runVerify({ root = resolveRepoRoot().root, config: injected } = {
     configFile: file,
     startedAt: new Date(startedAt).toISOString(),
     durationMs: Date.now() - startedAt,
-    spawnedServer: owned ? { pid: owned.pid, stopped: true } : null,
+    // 무엇을 확인했는지 그대로 적는다: exited는 실제 종료를 확인했을 때만 true다.
+    spawnedServer: owned ? { command: owned.command, ...stopped } : null,
     results,
     at: now()
   };
