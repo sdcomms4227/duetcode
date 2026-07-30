@@ -7,7 +7,7 @@
 
 ## 1. 게시 — **완료**
 
-`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.2.2`**.
+`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.3.3`**.
 
 > 이 절의 버전은 **손으로 갱신한다.** 자동 동기화(§8) 대상은 설치가 실제로 해석하는 참조뿐이고, 아래 경위 서술의 버전은 기록이라 치환하면 거짓이 된다.
 
@@ -233,6 +233,24 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 - 잔재(`task:test`·`handoff:test` 스크립트, `tools/` 디렉터리)는 **보고만 하고 지우지 않는다**(§6.0).
 
 ## 7. 다음 작업
+
+### v0.3.2 → v0.3.3 — 조용히 멈추는 검증, 그리고 npm으로 설치한 codex
+
+**`task verify`가 무한 대기할 수 있었다.** 서버가 헤더를 보낸 뒤 본문 중간에 소켓을 끊으면 `request()`의 Promise가 영원히 미결로 남았다. 실측한 이벤트 순서가 원인이다:
+
+```
+res.aborted → req.close → res.error(ECONNRESET) → res.close      ('end'는 오지 않는다)
+```
+
+코드는 `res`의 `'end'`와 `req`의 `'error'`만 듣고 있었다. `req`의 `'error'`는 **오지 않는다**. 게다가 `timeout` 옵션은 소켓 **비활성** 타임아웃이라 소켓이 파괴된 뒤에는 발동하지 않고, `maxDurationMs`는 검사 **사이**에만 확인되므로 둘 다 이 상황을 끊지 못했다. 실측으로 20초를 넘겨도 끝나지 않는 것을 확인했고, 고친 뒤에는 103ms에 `FAILED`로 끝난다.
+
+> **크래시가 아니라 행이라는 점이 나쁘다.** 죽으면 사람이 알아채지만, 멈추면 REVIEW 게이트를 잡은 채 아무 출력도 없이 서 있다. 그래서 이제 (1) `res`의 `error`·`close`를 함께 받고 (2) 어떤 이벤트가 오든 예산을 넘기지 않는 독립 타이머를 둔다. 회귀 테스트 두 건은 각각 "본문 중간 끊김"과 "계속 흘러서 비활성 타임아웃이 발동하지 않는 응답"을 재현하고, **소요 시간 상한까지 단정한다** — 결과만 보면 행을 잡지 못한다.
+
+**npm으로 설치한 codex로는 핸드오프를 쓸 수 없었다.** `parseCodexCommand`가 `codex.cmd`를 가리키면 `spawn EINVAL`로 죽었다(절대 경로 `.cmd`는 EINVAL, PATH의 맨이름은 ENOENT). v0.3.1에서 verify에 대해 고친 것과 **같은 문제**였는데 handoff는 `resolveSpawn`을 쓰지 않고 있었다 — 공유 규칙을 만들어 놓고 한쪽만 연결한 셈이다. 이제 둘 다 쓴다.
+
+> 회귀 테스트는 codex stub을 `.cmd`로 감싸 dispatch가 실제로 그 경로를 타게 한다. **수정을 되돌려 테스트가 `spawn EINVAL`로 실패하는 것까지 확인했다** — 통과가 "다른 이유로 초록"이 아님을 확인하지 않으면 회귀 테스트라고 부를 수 없다.
+
+**그 밖에**: CI 액션이 deprecated 상태였다(`actions/checkout@v4`·`setup-node@v4`가 Node 20을 대상으로 해 러너가 Node 24로 강제 실행). 실제 최신 메이저를 조회해 `checkout@v7`·`setup-node@v7`로 올렸다 — 감으로는 v5라고 답했을 뻔했다. §1의 "최신 릴리스" 표기도 갱신했다(`v0.2.2`에 멈춰 세 릴리스를 놓쳤다). 그 줄은 자동 동기화 대상이 아니라 손으로 고쳐야 하는 곳이다.
 
 ### v0.3.1 → v0.3.2 — CI가 "고쳤다"를 반증한 릴리스
 
