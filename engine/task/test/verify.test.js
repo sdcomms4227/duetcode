@@ -74,6 +74,17 @@ test('GET/HEAD 외의 메서드와 요청 본문은 설정으로도 허용되지
   assert.equal(planCheck(cfg, b, { name: 'x', path: '/x', method: 'head' }, 0).method, 'HEAD');
 });
 
+test('requires 형식 오류는 건너뜀으로 위장되지 않고 거부된다', () => {
+  // 문자열 하나를 그대로 주면 for...of가 글자 단위로 돌아 "설정 누락: e, n, v, :, X"라는 사유로
+  // 검사가 SKIPPED가 됐다 — 설정 오류가 "설정이 없다"로 위장되고 결과는 조용히 PARTIAL이 된다.
+  const b = base('http://127.0.0.1:1');
+  const cfg = config('http://127.0.0.1:1');
+  for (const requires of ['env:SOME_VAR', 42, [''], [null]]) {
+    assert.throws(() => planCheck(cfg, b, { name: 'x', path: '/x', requires }, 0), /requires는 참조 문자열의 배열/);
+  }
+  assert.equal(planCheck(cfg, b, { name: 'x', path: '/x', requires: ['env:DUET_VERIFY_TEST_ABSENT'] }, 0).outcome, 'SKIPPED');
+});
+
 test('path가 baseUrl 밖을 가리키면 거부한다', () => {
   // '//evil.example'은 프로토콜 상대 URL이라 origin이 통째로 바뀐다.
   const b = base('http://127.0.0.1:1');

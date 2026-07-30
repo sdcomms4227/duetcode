@@ -128,7 +128,14 @@ function planCheck(config, base, check, index) {
     if (value == null) { missing.push(reference); return ''; }
     return encodeURIComponent(value);
   });
-  for (const reference of check.requires ?? []) if (lookup(config, reference) == null) missing.push(reference);
+  // requires의 형식은 여기서 거부한다. 문자열 하나를 그대로 주면("requires": "env:X") for...of가 글자
+  // 단위로 돌아 "설정 누락: e, n, v, :, X"라는 엉뚱한 사유로 검사가 SKIPPED가 된다 — 설정 오류가
+  // "설정이 없어서 건너뛴 것"으로 위장되고 결과는 조용히 PARTIAL이 된다. 이 하니스가 가장 피해야 할 혼동이다.
+  const requires = check.requires ?? [];
+  if (!Array.isArray(requires) || !requires.every((value) => typeof value === 'string' && value.trim())) {
+    fail(`${label}: requires는 참조 문자열의 배열이어야 합니다(예: ["env:SOME_VAR"]).`);
+  }
+  for (const reference of requires) if (lookup(config, reference) == null) missing.push(reference);
 
   const headers = { accept: '*/*' };
   // 계정은 설정 파일이 아니라 환경변수에서 온다. 설정 파일에는 "어느 환경변수를 볼지"만 적는다 —
