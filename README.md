@@ -6,7 +6,7 @@ A Claude Code plugin that drops a reusable **state-machine + human-gate pipeline
 
 > ℹ️ **This is an internal tool, published so our own repositories can install it as a dependency.** It is offered as-is under MIT — there is no support commitment, roadmap, or expectation of external contributions.
 
-> ⚠️ **The bootstrap writes into the repository you point it at.** A run creates `TASK.md`, `docs/`, and a CI workflow; additively merges scripts and a devDependency into an existing `package.json`; and adds any missing entries to `.gitignore`. It never touches the engine — that arrives through `node_modules`. Run it against a clean working tree so `git diff` shows you exactly what changed.
+> ⚠️ **The bootstrap writes into the repository you point it at.** A run creates `TASK.md`, `docs/`, a CI workflow, and an empty `.duet/`; additively merges scripts and a devDependency into an existing `package.json`; and adds any missing entries to `.gitignore`. It never touches the engine — that arrives through `node_modules`. Run it against a clean working tree so `git diff` shows you exactly what changed.
 
 The engine is repo-native (pure Node.js + `yaml`): it installs as a devDependency and runs directly against the target repo's git and CI. The AI is only an adapter.
 
@@ -18,6 +18,7 @@ The engine is repo-native (pure Node.js + `yaml`): it installs as a devDependenc
 | `TASK.md` | Active Task state (single source of truth: front matter + prose) |
 | `.github/workflows/task-lint.yml` | CI: `npm run task:lint` |
 | `docs/duetcode-*.md` | Collaboration protocol, design, workflow example |
+| `.duet/` | Created empty, so `task verify`'s config (`.duet/verify.json`) and handoff state have a home. Git-ignored, so it never shows up in `git diff` |
 | `.gitignore` | Missing entries appended (`node_modules/`, `.duet/`) |
 
 The engine itself is **not** copied into the repo. It lives in `node_modules/duetcode` and is invoked through the `duet-task` / `duet-handoff` binaries, so upgrading is `npm install` and the version you use is pinned in your lockfile.

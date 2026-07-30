@@ -116,9 +116,11 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 | `task cancel "<사유>"` / `task supersede <대체id> "<사유>"` | 종결(closure 기록) |
 | `task reset` | 종결→IDLE(§6 규칙) |
 | `task record-verification --status <S> --failed-count <N>` | 검증 결과 수동 기록(REVIEW 전용) |
+| `task verify` | 비파괴 HTTP 스모크 하니스가 검증 결과를 실측·기록(REVIEW 전용). §9 |
 | `task archive <ref>` | closure.archiveRef 설정 |
 | `task approve-partial` | PARTIAL→DONE 사람 승인(TTY) |
 | `task issue-sync` | Issue 코멘트(수동 전용, 외부 쓰기). §7.1 |
+| `task --version` | 설치된 엔진 버전(`TASK.md` 없이도 동작) |
 
 - **lint 밖**: 전환 이력 검증(사람 직접 편집은 커밋 전 사람 리뷰가 최종 방어선). **대상 CI는 `task lint`만 실행**한다(엔진 테스트는 duetcode 저장소에서 돈다).
 
@@ -183,7 +185,9 @@ TASK.md                              # Active Task 상태(단일 소스)
 .duet/state/                         # 핸드오프 런타임 상태(gitignore)
 .duet/verify.json                    # 검증 하니스 로컬 설정(gitignore, Tier 2)
 .github/workflows/task-lint.yml      # CI: npm run task:lint
-docs/duetcode-collaboration-protocol.md
+docs/duetcode-collaboration-protocol.md       # 아래 3개 파일명은 공개 계약(install.js의 INSTALLED_DOCS)
+docs/duetcode-pipeline-design.md             # 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 신·구가 공존한다
+docs/duetcode-pipeline-workflow-example.md
 package.json                         # duetcode devDep + task/task:lint/handoff 스크립트
 node_modules/duetcode/               # 엔진 실체(gitignore) — 대상 저장소에 사본이 생기지 않는다
 ```

@@ -52,7 +52,7 @@
 | `-----BEGIN PRIVATE KEY-----` | 본문이 `ZmFrZS1wcml2YXRlLWtleS1tYXRlcmlhbA==` = base64(`fake-private-key-material`) | `engine/handoff/test/redaction.test.js:20` |
 | `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | AWS 공식 문서의 예시 키(이미 전 세계 공개) | `engine/handoff/test/redaction.test.js:114` |
 | `xoxb-1234…`, `AIza…`, `Basic dXNlcjpwYXNzd29yZA==` | 자리표시자. 마지막 것은 base64(`user:password`) | 동 파일 |
-| `token: …` 다수 | `crypto.randomUUID()` 기반 **락 소유권 토큰**. 자격증명이 아니다 | `engine/handoff/lib.js:165`, `test/lock.test.js` |
+| `token: …` 다수 | `crypto.randomUUID()` 기반 **락 소유권 토큰**. 자격증명이 아니다 | `engine/handoff/lib.js`의 `createLockFile()`, `test/lock.test.js` |
 
 **향후 규칙**: redaction 테스트에 새 픽스처를 추가할 때는 실제 형식을 흉내 내되 **명백히 가짜인 값**(`fake-`, `EXAMPLE`, 반복 문자)만 쓴다. 실제로 발급받은 값은 만료됐더라도 넣지 않는다 — 공개 저장소의 시크릿 스캐너가 오탐 경보를 발생시키고, 그 경보에 둔감해지는 것이 진짜 위험이다.
 

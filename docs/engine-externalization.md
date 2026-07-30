@@ -18,9 +18,11 @@
 - 상태머신 의미론·전이 규칙·lint 규칙 변경 없음. 이 작업은 **배치(placement) 리팩터링**이다.
 - 기존 `tools/` 레이아웃 설치를 즉시 폐기하지 않는다(마이그레이션 경로 유지).
 
-## 2. 현재 구조가 gitignore를 막는 지점 (실측)
+## 2. 변경 이전 구조가 gitignore를 막던 지점 (당시 실측)
 
-엔진 코드·대상 저장소 상태·대상 저장소 설정이 **한 디렉터리에 섞여 있어** 통째로 gitignore할 수 없다.
+엔진 코드·대상 저장소 상태·대상 저장소 설정이 **한 디렉터리에 섞여 있어** 통째로 gitignore할 수 없었다.
+
+> **아래 표와 목록의 행 번호는 이 작업 *이전* 리비전 기준이다.** 파일 경로는 그 뒤의 `tools/` → `engine/` 이동을 반영해 갱신됐지만, 행 번호는 당시 코드를 가리키므로 지금의 파일에서 그 줄을 찾으면 다른 것이 나온다. 이 절은 해결된 문제의 기록이지 현재 코드의 지도가 아니다 — 현재 동작은 §3이 서술한다.
 
 | # | 지점 | 문제 |
 |---|------|------|
@@ -59,7 +61,7 @@ task CLI는 그 위에 `resolveTaskFile`을 얹어 상태 파일을 찾는다: `
 
 ### 3.3 런타임 상태 이전 (B3)
 
-`DEFAULT_STATE_DIR`을 `<REPO_ROOT>/.duet/state/`로 옮긴다. 근거: 엔진 디렉터리는 **언제든 삭제·재설치되는 대상**이 되므로 상태를 두면 안 된다. `HANDOFF_STATE_DIR` 오버라이드는 그대로 유지한다(`lib.js:43`).
+`DEFAULT_STATE_DIR`을 `<REPO_ROOT>/.duet/state/`로 옮긴다. 근거: 엔진 디렉터리는 **언제든 삭제·재설치되는 대상**이 되므로 상태를 두면 안 된다. `HANDOFF_STATE_DIR` 오버라이드는 그대로 유지한다(`engine/handoff/lib.js`의 `resolveStateDir()`).
 
 ### 3.4 대상 저장소 설정 이전 (B4)
 
@@ -151,7 +153,7 @@ duetcode에 root `package.json` 신설(B6):
 
 | # | 지점 | 영향 |
 |---|------|------|
-| 1 | `engine/task/lib.js:138` — `git show <sha>:TASK.md` | `archive commit:<sha>` 경로가 동작 불가. 보존 참조 2개 중 하나가 사망(`docs:` 경로는 생존) |
+| 1 | `engine/task/lib.js`의 `verifyArchiveRef()` — `git show <sha>:TASK.md` | `archive commit:<sha>` 경로가 동작 불가. 보존 참조 2개 중 하나가 사망(`docs:` 경로는 생존) |
 | 2 | `designCheckpoint`에 commit SHA 기록 | 그 SHA를 체크아웃해도 당시 Task 상태를 복원할 수 없다 — "복귀 지점"이 반쪽이 된다 |
 | 3 | [pipeline-design.md §2](pipeline-design.md) — *"최종 방어선은 커밋 전 사람의 `git diff TASK.md`"* | **DONE 승인 게이트의 최종 방어선이 소멸.** `approve-partial`의 TTY 검사는 설계상 신원을 보증하지 않으며, 그 공백을 git diff가 메운다 |
 | 4 | `templates/task-lint.yml` (push/PR마다 `task:lint`) | lint 대상 소멸 |

@@ -126,7 +126,7 @@ function main(args = process.argv.slice(2)) {
     const ref = required(args[0], 'task archive <ref>'); verifyArchiveRef(model, ref); set(model, 'closure.archiveRef', ref);
   } else if (command === 'issue-sync') {
     const issue = get(model, 'issue'); if (!Number.isInteger(issue)) fail('front matter issue 번호가 필요합니다.');
-    // 외부 쓰기 전에 검증한다. 공통 lint는 아래(102행)라 gh 호출보다 늦고, 그때는 이미 게시된 뒤다.
+    // 외부 쓰기 전에 검증한다. 공통 lint는 이 분기 전체가 끝난 뒤에 돌아 gh 호출보다 늦고, 그때는 이미 게시된 뒤다.
     lint(model);
     const data = model.doc.toJS();
     const result = syncIssueComment(data, issue, args => execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'inherit'] }));
