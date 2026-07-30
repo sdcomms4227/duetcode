@@ -8,8 +8,11 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # 이 저장소의 CI(.github/workflows/ci.yml)와 같은 메이저를 쓴다. v4는 Node 20을 대상으로 해서
+      # 러너가 강제로 최신 Node로 실행한다는 경고를 매 실행마다 남긴다 — 그 경고는 대상 저장소에서도
+      # 똑같이 뜬다. 설치기는 기존 워크플로를 덮어쓰지 않으므로, 이 값은 신규 설치에만 적용된다.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm

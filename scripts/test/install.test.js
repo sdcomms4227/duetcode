@@ -315,6 +315,22 @@ test('LEGACY_DOCS의 대체 대상은 실제로 설치되는 파일이어야 한
 	}
 });
 
+test('대상 저장소용 워크플로는 이 저장소 CI와 같은 액션 메이저를 쓴다', () => {
+	// 액션 메이저를 올린 회차에 이 저장소의 ci.yml만 고치고 템플릿을 빠뜨려, 대상 저장소는 계속
+	// 옛 메이저를 설치받았다(경고를 없애려던 변경이 정작 사용자에게는 닿지 않았다).
+	// 설치기는 기존 워크플로를 덮어쓰지 않으므로, 이 드리프트는 신규 설치에서만 조용히 굳는다.
+	const majors = (file) => {
+		const text = fs.readFileSync(path.resolve(__dirname, '..', '..', file), 'utf8');
+		const found = {};
+		for (const [, action, major] of text.matchAll(/uses:\s+(actions\/[\w-]+)@(v\d+)/g)) found[action] = major;
+		return found;
+	};
+	const ours = majors('.github/workflows/ci.yml');
+	for (const [action, major] of Object.entries(majors('templates/task-lint.yml'))) {
+		assert.equal(major, ours[action], `${action}: 템플릿(${major})이 이 저장소 CI(${ours[action]})와 다르다`);
+	}
+});
+
 test('커밋이 없는 저장소에서도 실제 브랜치를 적고 git 오류를 흘리지 않는다', () => {
 	// `git init` 직후가 부트스트랩의 정상 경로다. 그런데 커밋이 없으면 rev-parse --abbrev-ref HEAD는
 	// 실패하므로, 예전에는 (1) 기본 브랜치가 main이 아닌 저장소에 'main'이 적혀 단일 소스가 사실과
