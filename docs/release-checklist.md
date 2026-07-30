@@ -234,6 +234,16 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 
 ## 7. 다음 작업
 
+### v0.3.1 → v0.3.2 — CI가 "고쳤다"를 반증한 릴리스
+
+**v0.3.1은 결함을 절반만 고친 채 게시됐다.** `terminateProcessTree`를 공유하면서 Windows 경로(`taskkill /T`)만 구현하고, POSIX에서는 `child.kill('SIGKILL')`로 직계 자식만 죽였다. Linux에서는 손자(`npm run dev` → node)가 살아남아 포트를 계속 물고 있었다 — 바로 그 결함을 고쳤다고 적어 놓고서.
+
+> **로컬이 Windows여서 못 봤고, CI가 잡았다.** 태그를 밀고 릴리스 노트를 게시한 **뒤에** ubuntu 러너에서 손자 종료 테스트 두 건이 실패했다. 교훈은 두 가지다.
+> 1. **테스트가 플랫폼 차이를 드러내도록 쓰여 있었기 때문에 드러났다.** "종료를 시도했다"가 아니라 "손자가 실제로 멈췄는가"를 marker mtime으로 확인했기 때문에 Windows에서 통과한 코드가 Linux에서 실패했다. 시도 여부만 단정했다면 두 플랫폼 모두 초록이었을 것이다.
+> 2. **다음부터는 태그 전에 브랜치로 CI를 한 번 돌린다.** v0.3.2는 그렇게 했다 — 브랜치 push → 6개 매트릭스 green 확인 → 그 다음에 병합·태그. 로컬 `npm test`는 한 플랫폼의 결과일 뿐이다.
+
+POSIX에는 "자손 전체"를 가리키는 수단이 없어 프로세스 그룹을 죽여야 하고, 그러려면 자식이 `detached: true`로 띄워져 그룹 리더여야 한다. 그래서 그룹 종료는 `{ group: true }`를 준 호출자에게만 시도한다 — **추측으로 `kill(-pid)`를 부르면 pid가 우연히 다른 그룹의 pgid와 겹칠 때 남의 프로세스 그룹을 죽이고, CI에서라면 러너 자신이 대상이 될 수 있다.** verify는 detached로 띄우고 플래그를 넘긴다. dispatch는 그룹을 만들지 않으므로 POSIX에서 codex 자신만 종료되는 기존 동작이 유지된다 — 알려진 한계이며, 플래그를 추론이 아니라 명시로 둔 이유다.
+
 ### v0.3.0 → v0.3.1 — 새로 넣은 코드가 기존 규율을 지키지 않던 자리들
 
 **patch로 올린 이유**: 공개 계약 변경이 없다. `verify` 리포트의 `spawnedServer` 모양이 바뀌지만(`stopped` → `command`·`exited`·`terminated`·`taskkillExitCode`), v0.3.0에서 하루 만에 잡은 것이라 이 필드에 의존하는 코드가 있을 수 없다.
