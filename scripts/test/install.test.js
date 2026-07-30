@@ -243,6 +243,29 @@ test('설치가 임시 파일을 남기지 않는다', () => {
 	}
 });
 
+test('.duet/ 디렉터리를 만들고 재실행에 멱등이다', () => {
+	// gitignore 대상이라 git에는 아무것도 나타나지 않지만, 없으면 task verify 설정을 두려는 사용자가
+	// mkdir부터 해야 한다(실설치 스모크에서 실제로 걸렸다). 핸드오프는 .duet/state/를 스스로 만들고
+	// verify는 읽기만 하므로, 만들어 주는 쪽이 일관적이다.
+	const target = mkTarget();
+	try {
+		const first = run(target);
+		assert.equal(first.status, 0);
+		assert.ok(fs.statSync(path.join(target, '.duet')).isDirectory(), '.duet/ 생성');
+		assert.match(first.stdout, /\.duet\//);
+
+		// 사용자가 넣어 둔 것을 재실행이 지우지 않는다.
+		fs.writeFileSync(path.join(target, '.duet', 'verify.json'), '{"profile":"dev"}');
+		assert.equal(run(target).status, 0);
+		assert.equal(fs.readFileSync(path.join(target, '.duet', 'verify.json'), 'utf8'), '{"profile":"dev"}');
+
+		// .gitignore가 .duet/를 무시하므로 git에는 드러나지 않아야 한다.
+		assert.match(fs.readFileSync(path.join(target, '.gitignore'), 'utf8'), /^\.duet\/$/m);
+	} finally {
+		cleanup(target);
+	}
+});
+
 test('설치되는 docs/ 파일명이 고정되어 있다', () => {
 	// 대상 파일명은 공개 계약이다. 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 기존 설치
 	// 대상에 구 파일이 남은 채 신 파일이 추가되어 둘이 공존한다(cc-symphony → duetcode 개명 때 실제로

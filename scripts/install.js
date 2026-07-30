@@ -98,6 +98,12 @@ function writeFileAtomic(destPath, content) {
   }
 }
 
+// 디렉터리만 만든다. 이미 있으면 아무것도 하지 않는다(설치기는 "추가만" 하는 도구다).
+function ensureDirectory(dirPath) {
+  if (fs.existsSync(dirPath)) { did('skip(존재)', rel(dirPath) + '/'); return; }
+  fs.mkdirSync(dirPath, { recursive: true });
+  did('create', rel(dirPath) + '/');
+}
 function ensureFileFromTemplate(templatePath, destPath, transform) {
   if (fs.existsSync(destPath)) { did('skip(존재)', rel(destPath)); return; }
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
@@ -205,6 +211,11 @@ function main() {
 
   // 4. .gitignore
   appendGitignore(TARGET_ROOT);
+
+  // 4.1 런타임 상태·로컬 설정이 들어갈 .duet/ — gitignore 대상이라 git에는 아무것도 나타나지 않지만,
+  // 없으면 `task verify` 설정을 두려는 사용자가 mkdir부터 해야 한다(실설치 스모크에서 실제로 걸렸다).
+  // 핸드오프는 .duet/state/를 스스로 만들고 verify는 읽기만 하므로, 만들어 주는 쪽이 일관적이다.
+  ensureDirectory(path.join(TARGET_ROOT, '.duet'));
 
   // 5. 규약·설계·예시 문서
   // 원본 부재는 위 preflight가 이미 걸렀다(PACKAGE_SOURCES). 예전에는 여기서 존재 검사로 넘겨서,
