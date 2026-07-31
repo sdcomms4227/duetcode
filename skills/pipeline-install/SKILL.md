@@ -18,9 +18,9 @@ description: duetcode 파이프라인(TASK.md 상태머신 + Codex 핸드오프)
    npx duet-init
    ```
 
-   - **코어만**(Codex 핸드오프 없이 task 상태머신 + lint + CI): `npx duet-init --no-handoff`
+   - **코어만 구성**(Codex 핸드오프 스크립트 없이 task 상태머신 + lint + CI): `npx duet-init --no-handoff`. npm에는 완전한 `duetcode` 패키지가 설치되며, 이 옵션은 대상 `package.json`에 `handoff` 스크립트를 추가하지 않을 뿐이다.
    - 기본은 "없으면 생성, 있으면 보존" — 기존 `TASK.md`·`package.json`·`.gitignore` 사용자 내용을 덮어쓰지 않는다.
-   - **엔진은 대상 저장소에 복사되지 않는다.** `node_modules/duetcode`에서 실행되며 버전은 lockfile에 고정된다. 갱신은 태그를 올리고 `npm install`.
+   - **`duet-init`은 대상 소유 엔진 사본을 만들지 않는다.** npm이 설치한 `node_modules/duetcode`에서 실행되며 버전은 lockfile에 고정된다. 엔진 갱신은 태그를 올리고 `npm install`; 새 scaffold 반영은 `npx duet-init` 재실행이다. 기존 문서·workflow는 덮어쓰지 않으므로 릴리스 마이그레이션 안내에 따라 수동 병합한다.
 
 3. 의존성 설치와 검증:
 

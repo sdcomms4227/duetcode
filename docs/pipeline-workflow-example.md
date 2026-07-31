@@ -20,10 +20,7 @@ npm run task -- lint
 현재 상태가 `IDLE`이면 신규 Task를 시작한다.
 
 ```bash
-npm run task -- start production-year-filter \
-  --objective "검색에 생산연도 범위 필터를 추가한다" \
-  --requester "사용자" \
-  --designer "Opus 4.8"
+npm run task -- start production-year-filter --objective "검색에 생산연도 범위 필터를 추가한다" --requester "사용자" --designer "Opus 4.8"
 ```
 
 ## 2. Claude 분석·설계
@@ -75,18 +72,26 @@ npm run task -- set status=REVIEW
 
 Claude는 구현 결과를 요구사항·설계·코드·문서·설정과 대조한다. 보완이 필요하면 Codex로 되돌린다.
 
+다음 두 명령은 보완 사유에 따라 하나만 선택한다.
+
 ```bash
-npm run task -- set status=IMPLEMENTING        # 구현 보완
-npm run task -- set status=READY --design-checkpoint <새-SHA>   # 설계 변경
+# 구현만 보완
+npm run task -- set status=IMPLEMENTING
+
+# 또는 설계부터 변경
+npm run task -- set status=READY --design-checkpoint <새-SHA>
 ```
 
 두 루프백 모두 기존 verification을 초기화한다(이전 PASS 재사용 불가).
 
 ## 5. 검증 결과 기록
 
+다음 두 기록은 실제 검증 결과에 따라 하나만 선택한다.
+
 ```bash
 npm run task -- record-verification --status PASSED --failed-count 0
-# 환경 제약으로 일부 미실행 시 (사유를 TASK.md에 기록)
+
+# 또는 환경 제약으로 일부 미실행 시 (사유를 TASK.md에 기록)
 npm run task -- record-verification --status PARTIAL --failed-count 0
 ```
 
@@ -115,7 +120,7 @@ git add <관련-파일> TASK.md
 git commit -m "feat(search): 생산연도 범위 검색 추가"
 ```
 
-CI는 `npm ci` + `npm run task:lint` + `npm run task:test`(+ 핸드오프 설치 시 `handoff:test`)로 현재 TASK 상태와 엔진을 검사한다(과거 전환 이력은 비교하지 않는다).
+대상 저장소에 설치되는 CI는 `npm ci` + `npm run task:lint`로 현재 TASK 상태를 검사한다(과거 전환 이력은 비교하지 않는다). 엔진 자체의 `task:test`·`handoff:test`는 duetcode 저장소의 `npm test`에서 실행한다. npm 패키지 내부에 테스트 파일이 함께 들어갈 수는 있지만, 대상 저장소의 스크립트나 CI 실행 단계로는 구성하지 않는다.
 
 ## 8. Task 종료와 IDLE 복원
 
@@ -127,10 +132,19 @@ npm run task -- reset
 
 ## 9. 예외 흐름
 
+차단과 복귀는 한 쌍의 흐름이다.
+
 ```bash
 npm run task -- block "테스트 계정 발급 대기"
 npm run task -- unblock          # 차단 직전 활성 상태로 복귀
+```
+
+작업을 종결할 때는 취소 또는 대체 중 하나만 선택한다. 두 명령 모두 실행 즉시 종결 상태가 되므로 연속 실행할 수 없다.
+
+```bash
 npm run task -- cancel "우선순위 변경으로 중단"
+
+# 또는
 npm run task -- supersede other-task-id "요구사항 전면 변경"
 ```
 
@@ -142,4 +156,4 @@ CANCELLED·SUPERSEDED는 종결 이유를 보존해야 reset할 수 있다(종�
 - `start`는 `## Active Task` 이하 본문을 `- 미정` 스켈레톤으로 교체한다. 설계자는 READY 전환 전에 이를 실제 내용으로 채워야 하며, 미교체 시 lint가 READY를 거부한다.
 - `verification.*`·`blocked.*`·`closure.*`는 `task set`으로 직접 수정하지 않고 전용 명령을 쓴다.
 - 구현 범위는 상태머신(코어), Codex 핸드오프 dispatcher, 자동 HTTP 검증 하니스 `task verify` 셋이다.
-- `task verify`는 REVIEW에서 `.duet/verify.json`을 읽어 비파괴 스모크(GET/HEAD 전용)를 돌리고 결과를 `verification`에 직접 쓴다. 설정이 없는 검사는 건너뛰고 `PARTIAL`이 되며, `PARTIAL`로 DONE에 가려면 여전히 `approve-partial`이 필요하다. 운영으로 읽히는 프로파일에서는 실행되지 않는다 — 그건 사람 게이트다. 자세한 규칙은 [pipeline-design.md §9](pipeline-design.md)에 있다.
+- `task verify`는 REVIEW에서 `.duet/verify.json`을 읽어 비파괴 스모크(GET/HEAD 전용)를 돌리고 결과를 `verification`에 직접 쓴다. 설정이 없는 검사는 건너뛰고 `PARTIAL`이 되며, `PARTIAL`로 DONE에 가려면 여전히 `approve-partial`이 필요하다. 운영으로 읽히는 프로파일에서는 실행되지 않는다 — 그건 사람 게이트다. 자세한 규칙은 [pipeline-design.md §9](pipeline-design.md#section-9)에 있다.

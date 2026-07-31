@@ -1,6 +1,6 @@
 # duetcode pipeline 설계
 
-> `TASK.md` 단일 상태 파일을 축으로, 설계·구현·검증 에이전트(Claude↔Codex)의 구현 배턴을 규칙에 맞춰 넘기는 **상태머신 + 사람 게이트** 파이프라인. 엔진은 저장소 네이티브(순수 Node.js + `yaml`), AI는 어댑터다.
+> `TASK.md` 단일 상태 파일을 축으로, 설계·구현·검증 에이전트(Claude↔Codex)의 구현 배턴을 규칙에 맞춰 넘기는 **상태머신 + 사람 게이트** 파이프라인. 엔진은 `node_modules`에서 실행되는 패키지 의존성(순수 Node.js + `yaml`), AI는 어댑터다.
 
 ## 1. 목표 / 비목표
 
@@ -14,6 +14,7 @@
 - 하이리스크 작업의 무인 진행 금지.
 - **외부 쓰기(GitHub Issue 코멘트 등) 자동 호출 금지** — 사람 실행/승인 대상.
 
+<a id="section-2"></a>
 ## 2. 신뢰 모델
 
 강제 장치(`task set` 쓰기 제한, TTY 검사, lint)는 **"협조적이지만 실수할 수 있는 에이전트"를 위한 가드레일**이지 악의적 우회를 막는 보안 경계가 아니다. 직접 파일 편집·PTY 할당으로 우회 가능하며 이를 막는 것은 목표가 아니다.
@@ -39,7 +40,7 @@
 | `roles.{implementer,reviewer}` | string | **READY부터 필수** |
 | `branch` | string | 항상 |
 | `designCheckpoint` | commit SHA 또는 문자열 | READY+ 필수. REVIEW→READY 시 재입력 강제 |
-| `issue` | number 또는 `null` | 선택 |
+| `issue` | 양의 정수 또는 `null` | 선택 |
 | `highRisk` | bool(기본 false) | 항상. **true면 `roles.designer`에 항상, `roles.reviewer`에는 READY부터 `Opus` 포함 필수** |
 | `verification` | 객체(§5) 또는 `null` | REVIEW부터 객체 필수(`status:null` 허용) |
 | `blocked` | 객체 또는 `null` | BLOCKED일 때만 객체 |
@@ -99,7 +100,7 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 ## 6. closure · reset 거부 규칙
 
 - 취소·대체의 사유·행선지를 초기화 전에 기계-판독 형태로 보존(`closure.{type,reason,replacementId,archiveRef,at}`).
-- `task archive <ref>`: 종결 상태에서 `closure.archiveRef` 설정. 단순 존재가 아니라 **현재 Task·closure 내용이 대상에 실제 보존됐는지 검증**(`commit:<sha>` / `docs:<path>`의 `<!-- TASK-ARCHIVE ... -->` 블록). `issue:#N`은 `task issue-sync` 경유만.
+- `task archive <ref>`: `CANCELLED`·`SUPERSEDED`에서 `closure.archiveRef` 설정(`DONE`은 closure가 없으므로 허용하지 않음). 단순 존재가 아니라 **현재 Task·closure 내용이 대상에 실제 보존됐는지 검증**(`commit:<sha>` / `docs:<path>`의 `<!-- TASK-ARCHIVE ... -->` 블록). `issue:#N`은 `task issue-sync` 경유만.
 - **`task reset`(종결→IDLE)**: `DONE`은 커밋되어 clean일 때만; `CANCELLED·SUPERSEDED`는 (a) `closure.archiveRef` 존재 또는 (b) 커밋되어 clean일 때만. 이력이 어디에도 없는 채 지워지는 것을 차단.
 
 ## 7. 명령 표면 (`duet-task`)
@@ -117,8 +118,8 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 | `task reset` | 종결→IDLE(§6 규칙) |
 | `task record-verification --status <S> --failed-count <N>` | 검증 결과 수동 기록(REVIEW 전용) |
 | `task verify` | 비파괴 HTTP 스모크 하니스가 검증 결과를 실측·기록(REVIEW 전용). §9 |
-| `task archive <ref>` | closure.archiveRef 설정 |
-| `task approve-partial` | PARTIAL→DONE 사람 승인(TTY) |
+| `task archive <ref>` | CANCELLED·SUPERSEDED의 closure.archiveRef 설정 |
+| `task approve-partial` | PARTIAL 결과의 DONE 전환 자격을 사람 승인(TTY, 상태 전환은 별도) |
 | `task issue-sync` | Issue 코멘트(수동 전용, 외부 쓰기). §7.1 |
 | `task --version` | 설치된 엔진 버전(`TASK.md` 없이도 동작) |
 
@@ -148,9 +149,10 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 - **로그는 흘려보내되, 안전을 증명할 수 있는 지점까지만 방출한다.** 마스킹은 완전한 문맥에서 해야 경계 누출이 없으므로 예전에는 종료 시 한 번만 기록했는데, 그러면 30분짜리 run의 `events.jsonl`이 끝날 때까지 비어 있고 강제종료 시 전량 유실됐다. 지금은 ① 줄 경계에서만 자르고(한 줄짜리 토큰 보호) ② env 유래 시크릿 중 가장 긴 것보다 넓은 tail을 남기며(멀티라인 시크릿 보호) ③ 닫히지 않은 PEM 블록은 닫힐 때까지 들고 있다(길이 상한이 없는 유일한 패턴). 이 셋을 만족하는 앞부분만 내보낸다.
 - **run 산출물은 보존 개수를 넘으면 오래된 것부터 지운다**(`HANDOFF_RUN_RETENTION`, 기본 20). 프롬프트·모델 출력 전문이 남는 디렉터리라 무제한 누적은 용량보다 잔존 자체가 위험이다. 삭제 건수는 새 run의 `metadata.json`에 남겨 조용히 사라지지 않게 한다.
 
+<a id="section-9"></a>
 ## 9. 검증 하니스 `task verify` (Tier 2 — 구현됨)
 
-비파괴 HTTP 스모크를 CLI로 고정한다(`engine/task/verify.js`). 설정은 `.duet/verify.json`(커밋 제외), 샘플은 `templates/verify.example.json`. **REVIEW에서만** 실행되며 결과를 `verification`에 직접 쓴다 — §5의 세 번째 쓰기 경로다.
+비파괴 HTTP 스모크를 CLI로 고정한다(패키지 내부 `engine/task/verify.js`). 설정은 `.duet/verify.json`(커밋 제외), 샘플은 npm이 설치한 `node_modules/duetcode/templates/verify.example.json`. **REVIEW에서만** 실행되며 결과를 `verification`에 직접 쓴다 — §5의 세 번째 쓰기 경로다.
 
 자동으로 `PASSED`를 쓸 수 있는 유일한 경로이므로, 무엇을 할 수 있는지를 좁게 고정한다.
 
@@ -159,10 +161,10 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 - **최대 실행 시간**: 전체 `maxDurationMs`(기본 120초)와 검사별 `checkTimeoutMs`(기본 10초). 전체 제한을 넘기면 남은 검사는 건너뜀이 아니라 **실패**다 — timeout을 미실행으로 해석하면 "느려서 못 끝낸 것"이 조용히 통과한다(§8 핸드오프의 timeout 규율과 같다).
 - **소유권 확인 후 프로세스 종료**: `server`를 주면 하니스가 직접 띄우고, **자신이 spawn한 자식만** 종료한다. 이미 떠 있던 서버는 우리 것이 아니므로 건드리지 않는다. 정리는 성공·실패·예외 모든 경로에서 실행된다.
   - **`finally` 하나로는 모든 경로를 덮지 못한다.** 정리 대상은 `startServer`가 **돌려준** 핸들이므로, 준비 확인이 실패해 그 함수가 throw하면 `finally`는 `null`을 받는다 — 서버는 살아남아 포트를 물고, 자식의 stdio가 붙은 부모는 이벤트 루프가 비지 않아 `duet-task verify`가 오류를 낸 뒤 그대로 매달렸다(실측). 그래서 준비 실패 경로는 `startServer` 안에서 스스로 트리를 종료하고 핸들을 놓은 뒤 원래 오류를 다시 던진다. 무한 대기는 이 하니스가 낼 수 있는 최악의 결과다.
-  - 종료는 **프로세스 트리 전체**를 대상으로 한다(`terminateProcessTree`). 부모만 죽이면 실제로 듣고 있는 손자(`npm run dev` → node)가 포트를 물고 남는다. 이 함수는 `engine/task/lib.js`에 있고 §8의 dispatch(codex 종료)가 **같은 것을 쓴다** — 같은 문제에 규칙이 두 벌이면 한쪽만 고쳐진다.
+  - 종료는 **프로세스 트리 전체**를 대상으로 한다(`terminateProcessTree`). 부모만 죽이면 실제로 듣고 있는 손자(`npm run dev` → node)가 포트를 물고 남는다. 이 함수는 패키지 내부 `engine/task/lib.js`에 있고 §8의 dispatch(codex 종료)가 **같은 것을 쓴다** — 같은 문제에 규칙이 두 벌이면 한쪽만 고쳐진다.
   - **트리 종료 방법은 플랫폼마다 다르고, POSIX는 호출자의 협력이 필요하다.** Windows는 `taskkill /T`로 끝나지만, POSIX에는 "자손 전체"를 가리키는 수단이 없어 프로세스 그룹을 죽여야 한다. 그러려면 자식이 `detached: true`로 띄워져 그룹 리더여야 하고, 호출자가 `{ group: true }`로 그 사실을 알려야 한다. **추측으로 `kill(-pid)`를 부르면 안 된다** — pid가 우연히 다른 그룹의 pgid와 겹치면 남의 프로세스 그룹을 죽이며, CI에서라면 러너 자신이 대상이 될 수 있다. verify와 dispatch 둘 다 POSIX에서 detached로 띄우고 플래그를 넘긴다(§8도 참조 — dispatch는 그 때문에 신호 핸들러가 함께 필요하다).
   - 리포트의 `spawnedServer`는 **확인한 사실만** 적는다. `exited`는 실제 종료를 확인했을 때만 `true`이고, 유예 시간 안에 확인하지 못하면 `false`로 남는다. 이 리포트는 sha256으로 해시돼 증거가 되므로, 확인하지 않은 것을 단정하면 증거가 거짓을 말한다.
-  - `server.command`는 `resolveSpawn`(`engine/task/lib.js`)이 플랫폼에 맞게 해석한다. Windows의 `.cmd`/`.bat`은 `shell` 없이 실행할 수 없고(Node가 `EINVAL`로 막는다), `shell: true`는 인자를 이어 붙이기만 해서 공백 있는 경로가 깨진다(둘 다 실측). 그래서 `cmd.exe /d /s /c`로 감싸고 인용을 직접 만들며 `windowsVerbatimArguments`로 Node의 재인용을 막는다. 덕분에 `{"command": "npm", "args": ["run", "dev"]}`가 Windows에서도 동작한다.
+  - `server.command`는 `resolveSpawn`(패키지 내부 `engine/task/lib.js`)이 플랫폼에 맞게 해석한다. Windows의 `.cmd`/`.bat`은 `shell` 없이 실행할 수 없고(Node가 `EINVAL`로 막는다), `shell: true`는 인자를 이어 붙이기만 해서 공백 있는 경로가 깨진다(둘 다 실측). 그래서 `cmd.exe /d /s /c`로 감싸고 인용을 직접 만들며 `windowsVerbatimArguments`로 Node의 재인용을 막는다. 덕분에 `{"command": "npm", "args": ["run", "dev"]}`가 Windows에서도 동작한다.
 - **설정 누락은 해당 항목만 `PARTIAL`**: 계정 환경변수나 `{records.*}` 참조가 비어 있으면(`replace-locally` 자리표시자 포함) 그 검사만 건너뛴다. 전체를 `FAILED`로 만들면 "설정이 없다"와 "기능이 깨졌다"가 구분되지 않는다. 비밀값은 설정 파일이 아니라 환경변수에서 오고, 설정에는 "어느 환경변수를 볼지"만 적는다.
 - **판정**: 실패 1건 이상 → `FAILED`(+건수), 실패 0·건너뜀 있음 → `PARTIAL`, 전부 통과 → `PASSED`. **실행된 검사가 0건이면 `PASSED`가 아니라 `PARTIAL`이다** — "아무것도 안 했다"가 "다 통과했다"로 읽히면 하니스가 게이트가 아니라 우회로가 된다.
 - **증거**: 리포트 JSON의 sha256과 함께 `exitCode`를 남기되 자신의 판정과 일치시킨다(`PASSED`면 0). §5의 "PASSED인데 exitCode≠0" 거부 규칙이 이 경로에도 그대로 걸린다. CLI도 `FAILED`/`PARTIAL`이면 exit 1로 끝내되 **결과 기록은 마친 뒤**다.
@@ -186,11 +188,11 @@ TASK.md                              # Active Task 상태(단일 소스)
 .duet/state/                         # 핸드오프 런타임 상태(gitignore)
 .duet/verify.json                    # 검증 하니스 로컬 설정(gitignore, Tier 2)
 .github/workflows/task-lint.yml      # CI: npm run task:lint
-docs/duetcode-collaboration-protocol.md       # 아래 3개 파일명은 공개 계약(install.js의 INSTALLED_DOCS)
+docs/duetcode-collaboration-protocol.md       # 아래 3개는 고정된 설치 산출물명(semver 공개 표면은 아님)
 docs/duetcode-pipeline-design.md             # 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 신·구가 공존한다
 docs/duetcode-pipeline-workflow-example.md
 package.json                         # duetcode devDep + task/task:lint/handoff 스크립트
-node_modules/duetcode/               # 엔진 실체(gitignore) — 대상 저장소에 사본이 생기지 않는다
+node_modules/duetcode/               # npm이 설치한 엔진 패키지(gitignore) — 대상 소유 소스 사본은 없음
 ```
 
-엔진은 대상 저장소에 복사되지 않는다. 어떤 버전을 쓰는지는 lockfile에 커밋되고, 갱신은 `npm install`이다.
+`duet-init`은 대상 소유 엔진 사본을 생성하지 않는다. npm이 `node_modules/duetcode`에 설치한 패키지의 버전은 lockfile에 커밋되고, 갱신은 `npm install`이다.

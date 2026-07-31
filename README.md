@@ -8,20 +8,20 @@ A Claude Code plugin that drops a reusable **state-machine + human-gate pipeline
 
 > ⚠️ **The bootstrap writes into the repository you point it at.** A run creates `TASK.md`, `docs/`, a CI workflow, and an empty `.duet/`; additively merges scripts and a devDependency into an existing `package.json`; and adds any missing entries to `.gitignore`. It never touches the engine — that arrives through `node_modules`. Run it against a clean working tree so `git diff` shows you exactly what changed.
 
-The engine is repo-native (pure Node.js + `yaml`): it installs as a devDependency and runs directly against the target repo's git and CI. The AI is only an adapter.
+The engine is a package dependency (pure Node.js + `yaml`): it runs from `node_modules` directly against the target repo's git and CI. The AI is only an adapter.
 
 ## What it sets up
 
 | Target | Contents |
 |---|---|
-| `package.json` | `duetcode` devDependency + `task` / `task:lint` / `handoff` scripts (merged into an existing file) |
+| `package.json` | `duetcode` devDependency + `task` / `task:lint` scripts, plus `handoff` unless `--no-handoff` is used (merged into an existing file) |
 | `TASK.md` | Active Task state (single source of truth: front matter + prose) |
 | `.github/workflows/task-lint.yml` | CI: `npm run task:lint` |
 | `docs/duetcode-*.md` | Collaboration protocol, design, workflow example |
 | `.duet/` | Created empty, so `task verify`'s config (`.duet/verify.json`) and handoff state have a home. Git-ignored, so it never shows up in `git diff` |
-| `.gitignore` | Missing entries appended (`node_modules/`, `.duet/`) |
+| `.gitignore` | Missing entries appended (`node_modules/`, `.duet/`, plus the two legacy state paths retained for upgrades) |
 
-The engine itself is **not** copied into the repo. It lives in `node_modules/duetcode` and is invoked through the `duet-task` / `duet-handoff` binaries, so upgrading is `npm install` and the version you use is pinned in your lockfile.
+`duet-init` does **not** generate a target-owned engine copy. npm installs the package under `node_modules/duetcode`, where the `duet-task` / `duet-handoff` binaries run; upgrading is `npm install`, and the version is pinned in the lockfile.
 
 ## Install
 
@@ -34,7 +34,7 @@ This repo is its own single-plugin marketplace:
 /plugin install duetcode@duetcode
 ```
 
-Installing the plugin gives you the `/duetcode:task` and `/duetcode:handoff` commands and the `duetcode:pipeline-install` / `duetcode:pipeline` skills. To scaffold the engine into a repo, invoke the `duetcode:pipeline-install` skill (or run the installer manually below).
+Installing the plugin gives you the `/duetcode:task` and `/duetcode:handoff` commands and the `duetcode:pipeline-install` / `duetcode:pipeline` skills. To add the dependency and scaffold the target-owned pipeline files, invoke the `duetcode:pipeline-install` skill (or run the installer manually below).
 
 ### As a dependency
 
@@ -48,11 +48,11 @@ npm run task:lint
 
 `duet-init` options: `--target <path>` and `--no-handoff` (omits the `handoff` script; it does **not** remove one already set up). Idempotent: an existing `TASK.md` is left alone entirely, and `package.json` / `.gitignore` keep everything already in them. One narrow exception — a script whose value exactly matches a known previous release's (e.g. `node tools/task/index.js`) is migrated to the current one, so upgrades do not leave dead commands behind. Any other value, including anything you edited, is reported as a conflict and left untouched.
 
-**Upgrading:** bump the tag in `package.json` and `npm install`. Nothing else to sync.
+**Upgrading:** bump the tag in `package.json` and run `npm install` to update the engine. Re-run `npx duet-init` for newly added scripts, ignore entries, or scaffold files. The bootstrap does not overwrite existing docs or workflows, so review the version's [migration notes](https://github.com/sdcomms4227/duetcode/blob/main/docs/release-checklist.md) and merge those changes manually when required.
 
 **Coming from a pre-duetcode install** (the old `cc-symphony` layout, which copied the engine into `tools/`): re-run `npx duet-init`, then delete the leftovers it reports — the stale `tools/` directory and the now-pointless `task:test` / `handoff:test` scripts. Move anything under `tools/handoff/state/` to `.duet/state/` first if a handoff is mid-flight.
 
-Optional: to auto-lint on session end, merge `templates/stop-hook-snippet.json` into the target repo's `.claude/settings.json`.
+Optional: to auto-lint on session end, merge `node_modules/duetcode/templates/stop-hook-snippet.json` into the target repo's `.claude/settings.json`.
 
 ## Usage
 
@@ -63,8 +63,8 @@ npm run task -- start <id> --objective <goal> --requester <who> --designer <who>
 npm run task -- set roles.implementer=<who> roles.reviewer=<who> designCheckpoint=<sha>
 npm run task -- set status=READY
 npm run handoff                     # delegate implementation to Codex -> REVIEW
-npm run task -- record-verification --status PASSED --failed-count 0 \
-  --evidence "npm test"           # runs it, records exit code + output hash
+npm run task -- record-verification --status PASSED --failed-count 0 --evidence "npm test"
+# --evidence runs the command and records its exit code + output hash.
 npm run task -- set status=DONE
 ```
 
@@ -74,7 +74,7 @@ State machine: `IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE`,
 
 Human gates and verification rules: see the `duetcode:pipeline` skill / [docs/pipeline-design.md](docs/pipeline-design.md) / [docs/pipeline-workflow-example.md](docs/pipeline-workflow-example.md).
 
-How the engine became location-independent and why it ships as a dependency: [docs/engine-externalization.md](docs/engine-externalization.md). Security review for the public release: [docs/public-release-readiness.md](docs/public-release-readiness.md). Naming rationale, release record, and migration notes for repos installed from the previous name: [docs/release-checklist.md](docs/release-checklist.md).
+How the engine became location-independent and why it ships as a dependency: [docs/engine-externalization.md](https://github.com/sdcomms4227/duetcode/blob/main/docs/engine-externalization.md). Security review for the public release: [docs/public-release-readiness.md](https://github.com/sdcomms4227/duetcode/blob/main/docs/public-release-readiness.md). Naming rationale, release record, and migration notes for repos installed from the previous name: [docs/release-checklist.md](https://github.com/sdcomms4227/duetcode/blob/main/docs/release-checklist.md).
 
 ## Handoff
 
@@ -120,7 +120,7 @@ docs/                             # design & workflow reference
 
 ## Versioning
 
-Semver, with the public surface defined as: the **`TASK.md` front-matter schema**, the **state-transition table**, and the **`task` / `handoff` CLI surface** (command names, flags, exit codes). The binary names (`duet-task`, `duet-handoff`, `duet-init`) are part of that surface too. A change that would make an existing `TASK.md` fail `lint`, remove a transition, or change a documented flag, binary name, or exit code is **breaking**. Everything else — prose templates, generated doc filenames, internal module layout — is not covered. Renaming a generated doc is not a semver break, but it is not free either: the bootstrap is skip-if-exists, so on the next run the old file stays and the new one lands beside it. Renames therefore ship with migration notes in [docs/release-checklist.md](docs/release-checklist.md).
+Semver, with the public surface defined as: the **`TASK.md` front-matter schema**, the **state-transition table**, and the **`task` / `handoff` CLI surface** (command names, flags, exit codes). The binary names (`duet-task`, `duet-handoff`, `duet-init`) are part of that surface too. A change that would make an existing `TASK.md` fail `lint`, remove a transition, or change a documented flag, binary name, or exit code is **breaking**. Everything else — prose templates, generated doc filenames, internal module layout — is not covered. Renaming a generated doc is not a semver break, but it is not free either: the bootstrap is skip-if-exists, so on the next run the old file stays and the new one lands beside it. Renames therefore ship with migration notes in [docs/release-checklist.md](https://github.com/sdcomms4227/duetcode/blob/main/docs/release-checklist.md).
 
 Pre-`1.0.0`, breaking changes land in minor releases. Pin an exact tag if you need stability.
 
@@ -128,7 +128,7 @@ Pre-`1.0.0`, breaking changes land in minor releases. Pin an exact tag if you ne
 
 - Node.js ≥ 18 (the engine has no runtime dependency beyond `yaml`). The npm test scripts deliberately avoid shell globbing, so they behave the same under Windows `cmd.exe` and POSIX shells.
 - For handoff: the `codex` CLI (override the executable via `HANDOFF_CODEX_CMD`). Without it, the core (state machine, lint, CI) still works fully.
-- For handoff **on Windows**: Codex runs the delegated work in a sandbox (`sandbox_mode="workspace-write"`), which requires its sandbox helper to launch. A broken or missing helper does not fail Codex itself — Codex can exit 0 with a normal event stream — but the dispatcher classifies the run as `TRANSPORT` (exit 4) because the environment the work ran in cannot be vouched for. There is no preflight for this: it is only detectable once the stream reports it. Install Codex through its official Windows installer rather than copying the binary, so the helper lands beside it.
+- For handoff **on Windows**: Codex runs the delegated work in a sandbox (`sandbox_mode="workspace-write"`), which requires its sandbox helper to launch. A broken or missing helper does not fail Codex itself — Codex can exit 0 with a normal event stream — but the dispatcher classifies the run as `TRANSPORT` (exit 4) because the environment the work ran in cannot be vouched for. There is no preflight for this: it is only detectable once the stream reports it. Use OpenAI's standalone PowerShell installer (`irm https://chatgpt.com/codex/install.ps1 | iex`) rather than copying the binary, so the helper and package metadata are installed together.
 
 > On exit 4, read `measurement` in the run's `result.json` **before re-running.** A transport failure does not mean nothing happened — the dispatcher records whether the Active Task already reached `REVIEW` and whether the working tree changed, and repeats those facts in the failure reason. Re-running blindly can duplicate finished work.
 
@@ -144,7 +144,7 @@ Pre-`1.0.0`, breaking changes land in minor releases. Pin an exact tag if you ne
 
 > **Where `duet-task` looks for `TASK.md`**, when `TASK_STATE_FILE` is unset: the current directory first, then the repo root. So running it from the repo root behaves as it always has, and running it from a subdirectory finds the repo's `TASK.md` instead of failing. `duet-handoff` always resolves against the repo root.
 
-> **Running tasks in several worktrees at once** needs no new feature — set three variables per worktree so both the state file *and* the runtime state are separate: `DUET_REPO_ROOT="$PWD"`, `TASK_STATE_FILE="$PWD/TASK.md"`, `HANDOFF_STATE_DIR="$PWD/.duet/state"`. Setting only the first two leaves both worktrees fighting over one `dispatch.lock`, which defeats the point. Each worktree's `TASK.md` stays committed on its own branch, so the human `git diff TASK.md` review that backs the DONE gate keeps working. See [docs/engine-externalization.md](docs/engine-externalization.md) §6.
+> **Running tasks in several worktrees at once** needs no new feature — set three variables per worktree so both the state file *and* the runtime state are separate: `DUET_REPO_ROOT="$PWD"`, `TASK_STATE_FILE="$PWD/TASK.md"`, `HANDOFF_STATE_DIR="$PWD/.duet/state"`. Setting only the first two leaves both worktrees fighting over one `dispatch.lock`, which defeats the point. Each worktree's `TASK.md` stays committed on its own branch, so the human `git diff TASK.md` review that backs the DONE gate keeps working. See [docs/engine-externalization.md §6](https://github.com/sdcomms4227/duetcode/blob/main/docs/engine-externalization.md#section-6).
 
 [^1]: On Windows, when this variable is unset, the installed launcher at `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` is preferred if it exists; otherwise `codex` is resolved from `PATH`.
 

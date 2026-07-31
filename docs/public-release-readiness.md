@@ -5,11 +5,13 @@
 > 이 검토는 `cc-symphony`라는 이름의 private 저장소를 대상으로 수행했다. 이후 **`duetcode`라는 신규 public 저장소로 새 이력을 시작**하기로 결정했으므로, 아래 §3.3(이력 정리)과 §4(개인 이메일)의 결론은 **신규 저장소에서 더 강한 형태로 자동 달성**된다 — 상세는 §4 참조.
 >
 > 목적: 이 코드베이스를 공개할 때의 노출 위험을 실측하고, 배포 전 필요한 조치를 기록한다.
-> 발단: [engine-externalization.md §4 방안 A](engine-externalization.md)(npm devDependency 배포)가 대상 저장소 CI에서 private 인증을 요구하는데, public 전환이 그 문제를 통째로 없애기 때문이다.
+> 발단: [engine-externalization.md §4 방안 A](engine-externalization.md#section-4)(npm devDependency 배포)가 대상 저장소 CI에서 private 인증을 요구하는데, public 전환이 그 문제를 통째로 없애기 때문이다.
 
 ## 1. 검토 범위
 
 `gh` 원격 조회 없이 로컬 저장소를 전수 스캔했다.
+
+> 이 절과 §3의 파일·커밋 수에서 “현재”는 **public 전환 직전 감사 시점**을 뜻한다. 이후 릴리스에서 파일과 테스트가 추가됐으므로 현재 작업 트리의 개수로 읽지 않는다.
 
 - **워킹트리** — 추적 파일 40개 전부
 - **git 이력 전체** — 18 커밋, `git log -p --all` 전문
@@ -39,7 +41,7 @@
 
 **공개 전환에 보안상 차단 요소는 없다.**
 
-이 저장소는 처음부터 특정 대상 저장소에 종속되지 않게 설계되었고(`templates/`·`skills/`·`commands/`·`docs/`·`CLAUDE.md`·`README.md` 전수 검색에서 대상 고유명 0건), 커밋된 적 있는 파일과 현재 추적 파일이 정확히 일치해 **이력 재작성(`git filter-repo` 등)이 불필요**하다.
+당시 저장소는 특정 대상 저장소에 종속되지 않게 설계되어 있었고(`templates/`·`skills/`·`commands/`·`docs/`·`CLAUDE.md`·`README.md` 전수 검색에서 대상 고유명 0건), 커밋된 적 있는 파일과 당시 추적 파일이 정확히 일치해 **public 전환을 위한 이력 재작성(`git filter-repo` 등)이 불필요**했다.
 
 ## 3. 상세 결과
 
@@ -49,16 +51,16 @@
 
 | 매칭 | 실체 | 위치 |
 |---|---|---|
-| `-----BEGIN PRIVATE KEY-----` | 본문이 `ZmFrZS1wcml2YXRlLWtleS1tYXRlcmlhbA==` = base64(`fake-private-key-material`) | `engine/handoff/test/redaction.test.js:20` |
-| `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | AWS 공식 문서의 예시 키(이미 전 세계 공개) | `engine/handoff/test/redaction.test.js:114` |
+| `-----BEGIN PRIVATE KEY-----` | 본문이 `ZmFrZS1wcml2YXRlLWtleS1tYXRlcmlhbA==` = base64(`fake-private-key-material`) | `engine/handoff/test/redaction.test.js`의 PEM 픽스처 |
+| `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY` | AWS 공식 문서의 예시 키(이미 전 세계 공개) | `engine/handoff/test/redaction.test.js`의 허용 목록 픽스처 |
 | `xoxb-1234…`, `AIza…`, `Basic dXNlcjpwYXNzd29yZA==` | 자리표시자. 마지막 것은 base64(`user:password`) | 동 파일 |
-| `token: …` 다수 | `crypto.randomUUID()` 기반 **락 소유권 토큰**. 자격증명이 아니다 | `engine/handoff/lib.js`의 `createLockFile()`, `test/lock.test.js` |
+| `token: …` 다수 | `crypto.randomUUID()` 기반 **락 소유권 토큰**. 자격증명이 아니다 | `engine/handoff/lib.js`의 `createLockFile()`, `engine/handoff/test/lock.test.js` |
 
 **향후 규칙**: redaction 테스트에 새 픽스처를 추가할 때는 실제 형식을 흉내 내되 **명백히 가짜인 값**(`fake-`, `EXAMPLE`, 반복 문자)만 쓴다. 실제로 발급받은 값은 만료됐더라도 넣지 않는다 — 공개 저장소의 시크릿 스캐너가 오탐 경보를 발생시키고, 그 경보에 둔감해지는 것이 진짜 위험이다.
 
 > **보강(실측)**: "명백히 가짜"만으로는 부족했다. 첫 push가 GH013 push protection에 걸렸고, 걸린 것은 위 표의 `xoxb-1234…` 하나였다 — 사람 눈에는 명백한 자리표시자지만 **탐지기는 형식만 본다**. 반면 같은 배열의 `'ASIA' + 'B'.repeat(16)`·`'AIza' + 'A'.repeat(35)`는 통과했다. **리터럴이 소스에 존재하지 않기 때문**이다.
 >
-> 따라서 규칙을 강화한다: **탐지 대상 형식의 픽스처는 리터럴로 쓰지 말고 런타임에 조립한다.** 이력 재작성으로 해결했으며 경위는 [release-checklist.md §1](release-checklist.md)에 있다. 그 값이 최초 커밋에 있었던 탓에 이력 전체를 다시 써야 했고, push 전이라 비용이 없었을 뿐이다.
+> 따라서 규칙을 강화한다: **탐지 대상 형식의 픽스처는 리터럴로 쓰지 말고 런타임에 조립한다.** 이력 재작성으로 해결했으며 경위는 [release-checklist.md §1](release-checklist.md#section-1)에 있다. 그 값이 최초 커밋에 있었던 탓에 이력 전체를 다시 써야 했고, push 전이라 비용이 없었을 뿐이다.
 >
 > **자동 강제(현재)**: 이 규칙은 더 이상 사람의 기억에 의존하지 않는다. `npm run lint:secrets`(`scripts/check-secret-literals.js`)가 저장소 전체에서 자격증명 형태의 리터럴을 찾아 막고, `npm test`가 같은 검사를 포함한다. 위 표에서 리터럴로 남아 있던 JWT 픽스처도 런타임 조립으로 바꿨다. 예외는 `ALLOWED_LITERALS`의 AWS 예시 키 하나뿐이며, 이는 GitHub이 공식 예시로 인지해 막지 않는 값이다.
 
@@ -77,7 +79,7 @@
 
 ```
 역대 커밋된 고유 경로 : 40
-현재 추적 중인 파일   : 40      ← 일치
+당시 추적 중인 파일   : 40      ← 일치
 ```
 
 **커밋됐다가 삭제된 파일이 하나도 없다.** "지워서 트리에는 없지만 blob으로 남아 접근 가능한" 파일이 존재하지 않으므로 이력 재작성이 필요 없다.
@@ -92,7 +94,7 @@
 
 | # | 조치 | 위치 |
 |---|------|------|
-| 1 | **개인 이메일 제거** — `sdcomms4227@gmail.com` → `sdcomms4227@users.noreply.github.com` | `.claude-plugin/marketplace.json:6` |
+| 1 | **개인 이메일 제거** — 개인 주소 → `sdcomms4227@users.noreply.github.com` | `.claude-plugin/marketplace.json`의 owner email |
 | 2 | **설계 문서 익명화** — 설치 대상 저장소명 3곳 제거 | `docs/engine-externalization.md` |
 | 3 | **저장소 개명** — `cc-symphony` → `duetcode`. 신규 public 저장소로 새 이력 시작 | 전 범위(추적 파일 52건) |
 | 4 | **`install.js` 파괴적 시맨틱 경고** — README 상단에 배치 | `README.md` |
@@ -101,16 +103,15 @@
 
 구 `cc-symphony` 저장소는 **삭제하지 않고 archive**하며, README에 이관 안내를 남긴다(개명으로 GitHub 자동 리다이렉트를 받지 못하므로).
 
-## 5. 잔여 권장 조치(미반영)
+## 5. 공개 전 권장 조치 처리 결과
 
 전환을 막지는 않지만 공개 전 처리하는 편이 낫다.
 
 1. ~~**`install.js`의 파괴적 시맨틱을 README에 경고로 명시.**~~ → **반영 완료.** README 상단에 경고 블록을 배치했다. 남의 저장소를 수정하는 도구를 공개하는 것이므로 첫 화면에 있어야 한다는 판단.
 
-2. ~~**semver 정책 선언.**~~ → **반영 완료.** README "Versioning" 절에서 공개 표면을 front matter 스키마·상태 전이표·CLI 표면(명령·플래그·exit code)으로 정의했다. [engine-externalization.md §4 방안 A](engine-externalization.md)로 가면 대상이 lockfile로 특정 리비전에 물리므로 이 정의가 계약이 된다.
+2. ~~**semver 정책 선언.**~~ → **반영 완료.** README "Versioning" 절에서 공개 표면을 front matter 스키마·상태 전이표·CLI 표면(명령·플래그·exit code)으로 정의했다. [engine-externalization.md §4 방안 A](engine-externalization.md#section-4)로 가면 대상이 lockfile로 특정 리비전에 물리므로 이 정의가 계약이 된다.
 
-3. **시크릿 스캐닝 활성화.**
-   공개 전환 직후 GitHub Secret scanning + push protection을 켠다. §3.1의 테스트 픽스처가 오탐으로 잡힐 수 있으므로, 잡히면 제외하지 말고 **픽스처를 더 명백한 가짜 값으로 바꾸는 쪽**을 택한다.
+3. ~~**시크릿 스캐닝 활성화.**~~ → **확인 완료.** public 저장소에서 Secret scanning과 push protection이 기본 활성화되어 있었고, 실제 push 차단으로 동작을 확인했다. 오탐 픽스처는 예외 처리하지 않고 런타임 조립으로 바꿨으며, `npm run lint:secrets`가 같은 형태의 재유입을 막는다.
 
 ## 6. 위협 모델 — 공개의 실제 비용
 
@@ -118,7 +119,7 @@
 
 - **배포 책임**: 임의의 저장소가 설치할 수 있게 된다. `install.js` 버그가 남의 저장소를 손상시킬 수 있다.
 - **유지보수 유입**: issue·PR 대응 의무와 호환성 유지 압력이 생긴다.
-- **redaction 로직 공개는 위험이 아니다.** 정규식이 공개되면 우회할 수 있다는 우려가 나올 수 있으나, [pipeline-design.md §2](pipeline-design.md)가 이미 선언했듯 이 장치들은 **"협조적이지만 실수할 수 있는 에이전트"를 위한 가드레일**이지 악의적 우회를 막는 보안 경계가 아니다. 로컬 로그 위생 목적이고, 공격자는 애초에 그 로그가 있는 기기에 접근해야 한다.
+- **redaction 로직 공개는 위험이 아니다.** 정규식이 공개되면 우회할 수 있다는 우려가 나올 수 있으나, [pipeline-design.md §2](pipeline-design.md#section-2)가 이미 선언했듯 이 장치들은 **"협조적이지만 실수할 수 있는 에이전트"를 위한 가드레일**이지 악의적 우회를 막는 보안 경계가 아니다. 로컬 로그 위생 목적이고, 공격자는 애초에 그 로그가 있는 기기에 접근해야 한다.
 
 ## 7. 전환 체크리스트
 
@@ -130,14 +131,14 @@
 - [x] 설계 문서 익명화(§4-2)
 - [x] README에 `install.js` 파괴적 시맨틱 경고 추가(§5-1)
 - [x] `duetcode`로 전 범위 개명(§4-3)
-- [x] [engine-externalization.md §4 방안 A](engine-externalization.md) 확정
+- [x] [engine-externalization.md §4 방안 A](engine-externalization.md#section-4) 확정
 - [x] semver 정책 선언(§5-2)
 - [x] `git config user.email` noreply 설정(§4) — 커밋 author가 이미 noreply 주소다
 - [x] [engine-externalization.md](engine-externalization.md) §3·§4 구현 — 게시 전에 완료(breaking 변경이라 대상이 1곳일 때 처리)
 - [x] **신규 public 저장소 `duetcode` 생성 + 초기 커밋**
-- [x] Secret scanning + push protection(§5-3) — public 저장소 기본 활성이라 별도 조치 불필요. 첫 push가 GH013으로 막힌 것이 그 증거이며, 대응은 [release-checklist.md §1](release-checklist.md)에 기록
+- [x] Secret scanning + push protection(§5-3) — public 저장소 기본 활성이라 별도 조치 불필요. 첫 push가 GH013으로 막힌 것이 그 증거이며, 대응은 [release-checklist.md §1](release-checklist.md#section-1)에 기록
 - [x] 구 `cc-symphony` 저장소 archive + 이관 안내(§4)
-- [x] 릴리스 태그 — `v0.1.0` 게시 후 배포본 문서 누락이 발견되어 `v0.1.1`을 냈고, 이후 `v0.1.2`까지 게시됐다. 대상의 `github:` 스펙이 가리키는 값은 이제 `scripts/sync-version.js`가 `package.json`에 맞춰 유지한다([release-checklist.md §8](release-checklist.md)) — 최신 버전을 이 문서에서 찾지 말 것
+- [x] 릴리스 태그 — `v0.1.0` 게시 후 배포본 문서 누락이 발견되어 `v0.1.1`을 냈고, 이후 `v0.1.2`까지 게시됐다. 대상의 `github:` 스펙이 가리키는 값은 이제 `scripts/sync-version.js`가 `package.json`에 맞춰 유지한다([release-checklist.md §8](release-checklist.md#section-8)) — 최신 버전을 이 문서에서 찾지 말 것
 - [x] 실설치 스모크 테스트 — 태그 해석·부트스트랩·`duet-task --version`·lint 확인
 
 **전환 완료.** 이 문서는 이제 사전 검토 계획이 아니라 **수행 기록**이다.

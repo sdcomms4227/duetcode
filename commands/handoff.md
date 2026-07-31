@@ -1,6 +1,6 @@
 ---
 description: READY Task를 Codex에 위임하는 duetcode 핸드오프 dispatcher 실행
-argument-hint: [--resume] [--high-risk-approved] [--timeout-min N]
+argument-hint: "[--resume] [--high-risk-approved] [--timeout-min N]"
 allowed-tools: Bash(npm run handoff:*), Bash(npm run task:*), Bash(git status:*), Read
 ---
 

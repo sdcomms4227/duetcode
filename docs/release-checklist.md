@@ -5,9 +5,10 @@
 >
 > 관련 문서: 보안 검토는 [public-release-readiness.md](public-release-readiness.md), 다음 리팩터링 계획은 [engine-externalization.md](engine-externalization.md).
 
+<a id="section-1"></a>
 ## 1. 게시 — **완료**
 
-`https://github.com/sdcomms4227/duetcode` public, 최신 릴리스 **`v0.4.1`**.
+`https://github.com/sdcomms4227/duetcode` public. 최신 **게시 완료** 릴리스는 `v0.4.0`이며, 현재 작업 트리는 `v0.4.1`을 준비 중이다. `v0.4.1` 커밋·태그·push·릴리스는 아래 변경 검토가 끝난 뒤 사람이 수행하는 게이트로 남아 있다.
 
 > 이 절의 버전은 **손으로 갱신한다.** 자동 동기화(§8) 대상은 설치가 실제로 해석하는 참조뿐이고, 아래 경위 서술의 버전은 기록이라 치환하면 거짓이 된다.
 
@@ -26,7 +27,7 @@
 
 ### 시크릿 스캐너 오탐 대응 방침 — **실제로 발생했고, 방침대로 처리했다**
 
-예측대로 첫 push가 **GH013 push protection**으로 거부됐다. 걸린 것은 `engine/handoff/test/redaction.test.js:14`의 Slack 토큰 픽스처 하나였다(`xoxb-` + 숫자열). 저장소 생성은 성공했고 push만 막힌 상태였다.
+예측대로 첫 push가 **GH013 push protection**으로 거부됐다. 걸린 것은 `engine/handoff/test/redaction.test.js`에 당시 있던 Slack 토큰 픽스처 하나였다(`xoxb-` + 숫자열). 저장소 생성은 성공했고 push만 막힌 상태였다.
 
 > **방침: 예외 처리(unblock URL)로 무시하지 말고, 픽스처를 더 명백한 가짜 값으로 바꾼다.**
 > 이유: 예외 목록이 길어질수록 진짜 경보에 둔감해진다. 그게 픽스처 노출보다 큰 위험이다.
@@ -152,7 +153,7 @@
 
 **삭제하지 말 것.** 개명(rename)이 아니라 신규 생성이므로 **GitHub 자동 리다이렉트가 없다.** archive + README 이관 안내가 유일한 연결고리다.
 
-로컬 `C:\Project\cc-symphony`는 **개명 전 상태로 원상 복구**되어 있다(HEAD `8a0d7f5`, clean). 그쪽에는 duetcode 관련 변경이 하나도 남아 있지 않으니, 혼동하지 말고 이 저장소만 작업하면 된다.
+로컬의 구 `cc-symphony` checkout은 당시 **개명 전 상태로 원상 복구**했다(HEAD `8a0d7f5`, clean). 그쪽에는 duetcode 관련 변경이 하나도 남지 않았다는 당시 확인 기록이며, 현재 작업 대상은 이 저장소뿐이다. 로컬 절대경로는 환경마다 다르므로 기록하지 않는다.
 
 구 저장소 README 상단에 붙일 안내 문안:
 
@@ -161,9 +162,9 @@
 > 개발은 그쪽에서 계속됩니다. 이 저장소는 기록 보존용으로 archive 되었습니다.
 ```
 
-## 5. 검증 기준선 (개명 직후 실측)
+## 5. 검증 기준선 (개명 직후 실측 — 역사 스냅샷)
 
-회귀 판단의 기준점이다. 무언가 바꾼 뒤 이 숫자가 달라지면 개명이 아니라 그 변경이 원인이다.
+아래 숫자는 개명 직후 회귀 여부를 판단할 때 사용한 당시 스냅샷이다. 이후 기능과 회귀 테스트가 추가됐으므로 현재 테스트 수를 뜻하지 않는다. 현재 기준선은 특정 건수가 아니라 `npm test`의 전체 성공과 의도된 플랫폼 skip뿐이다.
 
 ```
 task:lint      통과 (이 저장소에 TASK.md가 있을 때만)
@@ -193,6 +194,7 @@ npm install && npm run task:lint && npx duet-task --version
 
 > 명령에 셸 glob이나 디렉터리 인자를 쓰지 말 것 — 셸·Node 버전마다 동작이 갈린다(실측: cmd.exe는 glob을 확장하지 않고 Node 자체 glob은 21+라 18·20은 `Could not find`로 exit 1; 디렉터리 인자는 18·20이 재귀 실행하지만 22는 `MODULE_NOT_FOUND`). 각 `test/run.js`를 호출하거나 파일을 명시한다.
 
+<a id="section-6"></a>
 ## 6. 기존 설치 대상 마이그레이션 — 놓치기 쉬운 함정
 
 개명으로 `install.js`가 만드는 **문서 파일명이 바뀌었다**:
@@ -240,13 +242,33 @@ docs/cc-symphony-pipeline-workflow-example.md→  docs/duetcode-pipeline-workflo
 
 **`task verify`가 오류를 출력하고도 종료하지 못했다.** 서버 준비 확인이 실패하면 `startServer`가 throw하는데, 정리 대상은 그 함수가 **돌려준** 핸들이라 `runVerify`의 `finally`는 `null`을 받는다. 서버는 포트를 문 채 살아남고, 자식의 stdio가 붙은 부모는 이벤트 루프가 비지 않아 CLI가 매달렸다(재현 exit=124 → 수정 후 exit=0).
 
-> **§9는 "정리는 성공·실패·예외 모든 경로에서 실행된다(`finally`)"고 적고 있었고, 그 괄호가 함정이었다.** `finally`는 핸들을 **받은 뒤에만** 동작한다 — 서버가 뜨지 못한 경로는 애초에 그 밖이다. v0.3.3에서 `request()`의 무한 대기를 고치며 "검증이 조용히 멈춰 REVIEW를 붙잡는 것이 최악"이라고 적어 놓고, 같은 실패 양상이 한 층 위에 남아 있었다. 테스트도 두 층으로 나눴다: `kill(pid, 0)`으로 고아 여부를 직접 보는 것과, 사용자가 겪은 증상(CLI가 끝나지 않는다)을 경주로 보는 것. 수정을 되돌리면 테스트 러너 자체가 타임아웃까지 매달린다.
+> **[pipeline-design.md §9](pipeline-design.md#section-9)는 "정리는 성공·실패·예외 모든 경로에서 실행된다(`finally`)"고 적고 있었고, 그 괄호가 함정이었다.** `finally`는 핸들을 **받은 뒤에만** 동작한다 — 서버가 뜨지 못한 경로는 애초에 그 밖이다. v0.3.3에서 `request()`의 무한 대기를 고치며 "검증이 조용히 멈춰 REVIEW를 붙잡는 것이 최악"이라고 적어 놓고, 같은 실패 양상이 한 층 위에 남아 있었다. 테스트도 두 층으로 나눴다: `kill(pid, 0)`으로 고아 여부를 직접 보는 것과, 사용자가 겪은 증상(CLI가 끝나지 않는다)을 경주로 보는 것. 수정을 되돌리면 테스트 러너 자체가 타임아웃까지 매달린다.
 
 **`duet-init`이 커밋 없는 저장소에서 잘못된 브랜치를 적었다.** `git init` 직후가 정상 경로인데 `rev-parse --abbrev-ref HEAD`는 그때 실패한다. `git init -b develop` 저장소에 `branch: main`이 적혔고(단일 소스의 첫 값이 사실과 다르다), `execFileSync`가 자식 stderr를 흘려 성공한 출력 한가운데 `fatal:`이 찍혔다. `symbolic-ref --short HEAD`는 커밋 이전에도 답한다.
 
 **v0.3.3의 액션 메이저 상향이 대상 저장소에 닿지 않았다.** 이 저장소 `ci.yml`만 v7로 올리고 `templates/task-lint.yml`은 v4로 두었다 — 없애려던 경고는 대상 저장소에서도 똑같이 뜬다. 설치기는 기존 워크플로를 덮어쓰지 않으므로 이 드리프트는 **신규 설치에서만 조용히 굳는다.** 두 파일의 메이저가 갈리면 실패하는 테스트를 넣었다.
 
-> **이 릴리스의 세 건은 형태가 같다: 우리가 "고쳤다"고 적은 것이 실제로 닿는 범위를 좁게 확인했다.** 정리는 `finally`가 있으니 됐다고, 브랜치는 git이 알려주니 됐다고, 액션은 CI를 고쳤으니 됐다고 본 자리들이다. 셋 다 실설치 스모크와 소스 재독으로만 드러났다.
+**설치 대상의 운영 예시가 존재하지 않는 엔진 테스트를 CI 단계로 안내했다.** 대상 저장소에 설치되는 워크플로는 의도적으로 `npm ci`와 `npm run task:lint`만 실행하고, `task:test`·`handoff:test`는 엔진을 직접 검증하는 duetcode 저장소 전용이다. 그런데 `docs/pipeline-workflow-example.md`는 대상 CI가 세 명령을 모두 실행한다고 적어, 설치 결과와 문서가 서로 다른 계약을 설명했다. 운영 예시를 실제 `templates/task-lint.yml` 및 설치기 주석과 맞췄다.
+
+**원본에서는 정상인 문서 링크가 설치 후 깨졌다.** 원본 `pipeline-workflow-example.md`는 같은 디렉터리의 `pipeline-design.md`를 가리키지만, 설치기는 두 문서를 각각 `duetcode-pipeline-workflow-example.md`와 `duetcode-pipeline-design.md`로 개명한다. 파일 존재만 검사해서는 이 단절을 잡을 수 없었다. 설치 시 내부 상대 링크도 대상 파일명으로 변환하고, 실제 설치 결과에서 링크 대상이 존재하는지 확인하는 회귀 테스트를 추가했다.
+
+**세부 계약 설명도 실제 lint·명령 동작보다 넓게 적힌 곳이 있었다.** `issue`는 모든 number가 아니라 양의 정수만 허용하고, `archive`는 모든 종결 상태가 아니라 closure가 있는 `CANCELLED`·`SUPERSEDED` 전용이며, `approve-partial`은 즉시 DONE으로 전환하지 않고 별도 DONE 전환의 자격만 부여한다. 하이리스크 reviewer의 `Opus` 강제 시점도 DESIGN이 아니라 READY부터다. 설계 문서·운영 skill·협업 규약을 실제 `validate()`와 명령 구현에 맞췄다. `--no-handoff`도 별도 축소 패키지를 설치하는 옵션이 아니라 완전한 패키지 설치 후 `handoff` 스크립트만 생략하는 옵션임을 명확히 했다. 설치 문서가 대상 루트에 존재하지 않는 `templates/verify.example.json`을 가리키던 부분은 실제 npm 패키지 경로인 `node_modules/duetcode/templates/verify.example.json`으로 고쳤다. 운영 skill에서 선택지를 셸 파이프(`|`)로 적어 복사 실행 시 엉뚱한 프로그램을 호출하던 예시와, Windows에서 동작하지 않는 workflow의 POSIX 줄 연속도 교차 셸 형태로 고쳤다. 구현 완료 상태인 외부화 설계 문서가 제거된 `--engine-only --force`를 현재형 마이그레이션 절차처럼 남긴 부분도, 역사 기록임을 명시하고 현재 절차로 연결했다.
+
+**문서 링크는 소스·설치본·npm 배포본이라는 세 환경에서 각각 검증해야 했다.** 저장소에서 정상인 상대 링크도 설치 시 파일명이 바뀌거나 tarball의 `files` 목록에서 대상이 제외되면 깨진다. 설치본 검사는 파일명 변환과 `#section-9` 앵커를 확인하고, 새 `scripts/test/docs-consistency.test.js`는 저장소 전체 로컬 링크·절 앵커·환경 종속 Windows 절대경로와 npm 배포 Markdown의 상대 링크 포함 여부를 고정한다. README가 tarball에 넣지 않는 내부 보안·릴리스 기록을 가리키는 링크는 GitHub 절대 링크로 바꿨다.
+
+**검사를 추가하고도 기여자 지침이 그 검사를 건너뛰도록 안내하고 있었다.** `CLAUDE.md`의 테스트 절은 제출 전 실행 명령으로 `node --test scripts/test/install.test.js` 한 파일만 지목했다. `scripts/test/run.js`는 그 디렉터리의 `*.test.js`를 열거하므로 파일 하나를 지정하면 version-sync·secret-literal·doc-consistency 검사가 **조용히 빠진다** — 지침을 그대로 따른 기여자에게는 이번 릴리스에 추가한 문서 검사가 존재하지 않는 것과 같다. 지침을 `npm test`로 고치고 왜 한 파일 지정이 위험한지 근거를 함께 남겼다. `lint:secrets`·version-sync만 근거까지 설명되고 새 doc-consistency 검사는 어디에도 기록되지 않았던 것도, 검사 항목·`files` 경계 규칙·두 예외를 형제 항목 옆에 적어 채웠다.
+
+**역사 기록의 현재형도 현재 계약과 갈렸다.** 외부화 설계의 존재하지 않는 `--verbose` 경로, `v0.3.2` 당시 dispatch의 POSIX 한계를 현재 한계처럼 쓴 문장, public 전환 당시 파일 수와 개명 직후 테스트 수를 “현재” 기준처럼 읽히게 한 표현을 각각 실제 관찰 경로와 명시적인 역사 스냅샷으로 고쳤다. 공개 문서에 남아 있던 로컬 절대경로와 이동으로 무효가 된 줄 번호 참조도 제거했다.
+
+**플러그인 command 문서의 front matter도 문서처럼 보이기만 하고 YAML로는 깨져 있었다.** `commands/handoff.md`의 인용되지 않은 `argument-hint: [--resume] ...`를 YAML이 flow sequence로 해석하다 실패했다. 문자열로 인용하고, 배포 command·skill 네 개의 front matter를 실제 `yaml` 파서로 읽는 검사와 모든 Markdown 코드 펜스의 열림·닫힘 균형 검사를 추가했다.
+
+**README와 설치 skill의 업그레이드·선택 템플릿 안내도 설치기 정책과 달랐다.** “`npm install` 외에는 동기화할 것이 없다”는 문장은 엔진에는 맞지만, 새 scaffold는 `duet-init`을 다시 실행해야 하고 기존 docs·workflow는 덮어쓰지 않아 릴리스별 수동 병합이 필요하다. 업그레이드 절차를 그 세 단계로 나눴다. 대상 저장소에 존재하지 않는 `templates/stop-hook-snippet.json` 경로는 실제 npm 패키지 경로인 `node_modules/duetcode/templates/stop-hook-snippet.json`으로 고치고 회귀 검사에 포함했다.
+
+**외부화 문서의 “현재 구조” 절에도 구현되지 않은 유예 경로와 비호환 테스트 명령이 남아 있었다.** 구 `tools/task/verify.local.json`은 자동으로 읽거나 경고하지 않으며 사람이 `.duet/verify.json`으로 옮겨야 한다. 또한 `node --test engine/*/test/*.test.js`는 셸·Node 버전에 따라 glob 처리가 달라 이 저장소가 전용 `test/run.js`를 둔 이유와 정면으로 충돌했다. 둘을 실제 수동 마이그레이션 및 `npm test` 경로로 정정했다.
+
+> **기존 설치 수동 조치:** `duet-init`은 기존 문서를 덮어쓰지 않으므로 재실행만으로 문서 수정이 반영되지 않는다. 기존 `docs/duetcode-pipeline-workflow-example.md`를 프로젝트에 맞게 편집한 적이 없다면 새 버전 원본과 수동으로 교체한다. 사용자 편집을 보존해야 한다면 CI 설명을 `npm ci` + `npm run task:lint`로 고치고, `pipeline-design.md` 링크 대상을 `duetcode-pipeline-design.md#section-9`로 바꾼다. `docs/duetcode-pipeline-design.md`에는 `<a id="section-9"></a>` 앵커와 위 세부 계약 설명을 함께 반영한다. `docs/duetcode-collaboration-protocol.md`도 계약 설명을 수동 반영하되 프로젝트별 자리표시자와 사용자 편집은 보존한다.
+
+> **이 릴리스의 수정들은 형태가 같다: 우리가 "고쳤다"고 적은 것이 실제로 닿는 범위를 좁게 확인했다.** 정리는 `finally`가 있으니 됐다고, 브랜치는 git이 알려주니 됐다고, 액션은 CI를 고쳤으니 됐다고, 운영 예시는 구현을 따라갈 것이라고, 원본 링크가 맞으면 설치본도 맞을 것이라고, 규칙 이름이 같으면 세부 조건도 같을 것이라고 본 자리들이다. 모두 실설치 스모크와 소스 재독으로만 드러났다.
 
 **남은 것**(고치지 않기로 판단한 것): `quoteForCmd`는 cmd의 `%VAR%` 확장을 무력화하지 않는다 — 인자에 리터럴 `%`가 있고 동명 환경변수가 있을 때만 문제이며, cmd에는 신뢰할 escape가 없다. `dispatch`의 `finally`는 모듈 `releaseLock`을 쓰고 신호 핸들러만 주입된 것을 쓴다 — 테스트 시임의 비대칭일 뿐 동작 차이는 없다.
 
@@ -294,7 +316,7 @@ res.aborted → req.close → res.error(ECONNRESET) → res.close      ('end'는
 > 1. **테스트가 플랫폼 차이를 드러내도록 쓰여 있었기 때문에 드러났다.** "종료를 시도했다"가 아니라 "손자가 실제로 멈췄는가"를 marker mtime으로 확인했기 때문에 Windows에서 통과한 코드가 Linux에서 실패했다. 시도 여부만 단정했다면 두 플랫폼 모두 초록이었을 것이다.
 > 2. **다음부터는 태그 전에 브랜치로 CI를 한 번 돌린다.** v0.3.2는 그렇게 했다 — 브랜치 push → 6개 매트릭스 green 확인 → 그 다음에 병합·태그. 로컬 `npm test`는 한 플랫폼의 결과일 뿐이다.
 
-POSIX에는 "자손 전체"를 가리키는 수단이 없어 프로세스 그룹을 죽여야 하고, 그러려면 자식이 `detached: true`로 띄워져 그룹 리더여야 한다. 그래서 그룹 종료는 `{ group: true }`를 준 호출자에게만 시도한다 — **추측으로 `kill(-pid)`를 부르면 pid가 우연히 다른 그룹의 pgid와 겹칠 때 남의 프로세스 그룹을 죽이고, CI에서라면 러너 자신이 대상이 될 수 있다.** verify는 detached로 띄우고 플래그를 넘긴다. dispatch는 그룹을 만들지 않으므로 POSIX에서 codex 자신만 종료되는 기존 동작이 유지된다 — 알려진 한계이며, 플래그를 추론이 아니라 명시로 둔 이유다.
+POSIX에는 "자손 전체"를 가리키는 수단이 없어 프로세스 그룹을 죽여야 하고, 그러려면 자식이 `detached: true`로 띄워져 그룹 리더여야 한다. 그래서 그룹 종료는 `{ group: true }`를 준 호출자에게만 시도한다 — **추측으로 `kill(-pid)`를 부르면 pid가 우연히 다른 그룹의 pgid와 겹칠 때 남의 프로세스 그룹을 죽이고, CI에서라면 러너 자신이 대상이 될 수 있다.** 이 `v0.3.2` 시점에는 verify만 detached로 띄우고 플래그를 넘겼고, dispatch는 그룹을 만들지 않아 POSIX에서 codex 자신만 종료되는 한계가 남았다. 그 한계는 이후 `v0.4.0`에서 dispatch도 detached로 전환하고 중단 신호 핸들러를 함께 넣어 해소했다(위 `v0.3.3 → v0.4.0` 항목).
 
 ### v0.3.0 → v0.3.1 — 새로 넣은 코드가 기존 규율을 지키지 않던 자리들
 
@@ -310,13 +332,13 @@ POSIX에는 "자손 전체"를 가리키는 수단이 없어 프로세스 그룹
 
    > **여기서 측정이 세 번 필요했다.** ① `.cmd`를 `shell: false`로 spawn → `EINVAL`(Node의 셸 주입 수정 결과). ② `shell: true` → 실행은 되지만 공백 있는 경로가 깨지고 `DEP0190` 경고가 난다. ③ `cmd.exe /d /s /c`로 감싸되 내부 인용을 `\"`로 이스케이프 → 여전히 실패. 정답은 **인용부호 중복(`""`) + `windowsVerbatimArguments: true`** 였다. cmd는 `\"`를 모르고, verbatim이 없으면 Node가 자기 인용을 덧씌워 다시 깨진다. 추측으로는 어느 조합도 맞히지 못했을 것이다.
 
-**같은 릴리스에서 함께 고친 것**: `lint:secrets`가 점으로 시작하는 디렉터리를 전부 건너뛰어 **배포 대상인 `.claude-plugin/`을 검사하지 않았다.** 규칙은 옳은데 walk가 파일에 도달하지 못하는 형태였고, 그건 §2가 경계하는 "조용히 통과하는 검사"와 같다. 제외 목록은 이제 `node_modules`·`.git`·`.duet` 셋뿐이고, 테스트가 임시 트리에 위반을 심어 **제외가 실제로 동작하는지와 제외 밖에서는 반드시 잡히는지**를 함께 확인한다.
+**같은 릴리스에서 함께 고친 것**: `lint:secrets`가 점으로 시작하는 디렉터리를 전부 건너뛰어 **배포 대상인 `.claude-plugin/`을 검사하지 않았다.** 규칙은 옳은데 walk가 파일에 도달하지 못하는 형태였고, 그건 §1의 시크릿 스캐너 오탐 대응 방침이 경계하는 "조용히 통과하는 검사"와 같다. 제외 목록은 이제 `node_modules`·`.git`·`.duet` 셋뿐이고, 테스트가 임시 트리에 위반을 심어 **제외가 실제로 동작하는지와 제외 밖에서는 반드시 잡히는지**를 함께 확인한다.
 
 `duet-init`은 `.duet/`를 만든다(실설치 스모크에서 걸렸다 — 없으면 `task verify` 설정을 두려는 사용자가 `mkdir`부터 해야 했다). gitignore 대상이라 git에는 아무것도 나타나지 않는다. 설정이 없을 때의 오류 메시지도 `mkdir`과 `copy` 두 단계를 함께 보여준다.
 
 ### `task verify` 구현 완료 (Tier 2)
 
-[pipeline-design.md](pipeline-design.md) §9의 검증 하니스를 구현했다(`engine/task/verify.js`, `engine/task/test/verify.test.js`). 이로써 §5의 verification 쓰기 경로 3개가 모두 실재한다 — 그전까지는 §5가 세 개를 세고 §9가 "미구현"이라 밝히는 어긋난 상태였고, **이 문서들은 대상 저장소로 배포되므로** 그 어긋남이 그대로 노출됐다(§2의 v0.2.2 항목 참조).
+[pipeline-design.md §9](pipeline-design.md#section-9)의 검증 하니스를 구현했다(`engine/task/verify.js`, `engine/task/test/verify.test.js`). 이로써 같은 문서 §5의 verification 쓰기 경로 3개가 모두 실재한다 — 그전까지는 §5가 세 개를 세고 §9가 "미구현"이라 밝히는 어긋난 상태였고, **이 문서들은 대상 저장소로 배포되므로** 그 어긋남이 그대로 노출됐다(이 문서 §1의 v0.2.2 항목 참조).
 
 게이트 성격이 강한 기능이라 "무엇을 못 하는가"를 테스트로 고정했다: 운영으로 읽히는 프로파일은 `allowedProfiles`로도 못 뚫는다, `GET`/`HEAD` 외 메서드는 계획 단계에서 막혀 **요청이 한 건도 나가지 않는다**, 실행된 검사가 0건이면 `PASSED`가 아니라 `PARTIAL`이다, 최대 실행 시간 초과는 건너뜀이 아니라 실패다, 하니스가 띄운 서버만 종료한다.
 
@@ -341,6 +363,7 @@ POSIX에는 "자손 전체"를 가리키는 수단이 없어 프로세스 그룹
 
 **그래서 하지 않아도 되는 일**: `scripts/sync-version.js`의 `github:...#v<버전>` 치환 패턴은 그대로 둔다. 레지스트리 스펙으로 바꿀 일이 없으므로 §8의 동기화 대상도 바뀌지 않는다. 패키지 자체는 발행 가능한 상태이지만(`files`·`bin` 검증은 `scripts/test/package-meta.test.js`가 계속 강제한다) 그것은 tarball 설치를 위한 것이지 발행 준비가 아니다.
 
+<a id="section-8"></a>
 ## 8. 버전 참조 동기화
 
 `v0.1.2` 릴리스 뒤 설치 참조가 `#v0.1.1`에 남은 문제를 막기 위해, `scripts/sync-version.js`가 `package.json`을 기준으로 README·설치 스킬·설치 스니펫·`.claude-plugin/plugin.json`의 버전을 맞춘다.

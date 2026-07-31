@@ -21,21 +21,28 @@ IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
 ## 핵심 명령
 
 ```bash
-npm run task -- show | lint
+npm run task -- show
+npm run task -- lint
 npm run task -- start <id> --objective <목표> --requester <요청자> --designer <설계자>
 npm run task -- set roles.implementer=<모델>  "roles.reviewer=<모델>"  designCheckpoint=<SHA>
-npm run task -- set status=READY | IMPLEMENTING | REVIEW | DONE  [--design-checkpoint <v>]
-npm run task -- record-verification --status PASSED|FAILED|PARTIAL --failed-count <N> [--evidence "<검증 명령>"]
+npm run task -- set status=READY            # IMPLEMENTING / REVIEW / DONE도 같은 형식
+npm run task -- set status=READY --design-checkpoint <v>  # REVIEW→READY 전용
+npm run task -- record-verification --status PASSED --failed-count <N> [--evidence "<검증 명령>"]  # FAILED / PARTIAL도 같은 형식
 npm run task -- verify                   # REVIEW 전용, .duet/verify.json 기반 비파괴 HTTP 스모크
 npm run task -- approve-partial          # TTY 필요
-npm run task -- block "<사유>" | unblock | cancel "<사유>" | supersede <대체id> "<사유>" | reset
+npm run task -- block "<사유>"
+npm run task -- unblock
+npm run task -- cancel "<사유>"
+npm run task -- supersede <대체id> "<사유>"
+npm run task -- archive <ref>              # CANCELLED·SUPERSEDED 전용; commit:<sha> 또는 docs:<path>
+npm run task -- reset
 ```
 
 `verification.*`·`blocked.*`·`closure.*`는 `task set`으로 못 바꾼다 — 각 전용 명령만.
 
 ### `task verify` (자동 검증 하니스)
 
-`.duet/verify.json`(커밋 제외, 샘플은 `templates/verify.example.json`)에 정의한 비파괴 HTTP 스모크를 돌려 결과를 `verification`에 직접 쓴다. 설정이 없으면 무엇을 만들어야 하는지 알리고 멈춘다. 알아둘 제약:
+`.duet/verify.json`(커밋 제외, 샘플은 npm이 설치한 `node_modules/duetcode/templates/verify.example.json`)에 정의한 비파괴 HTTP 스모크를 돌려 결과를 `verification`에 직접 쓴다. 설정이 없으면 CLI가 현재 설치된 패키지의 절대 샘플 경로를 알려주고 멈춘다. 알아둘 제약:
 
 - **REVIEW에서만** 실행된다. 결과가 `FAILED`/`PARTIAL`이면 exit 1이지만 **기록은 이미 끝난 뒤**다 — 다시 돌릴 필요 없이 `show`로 확인하면 된다.
 - **운영으로 읽히는 프로파일(`prod`/`production`/`live`/`release`/`main` 등)에서는 실행되지 않는다.** `allowedProfiles`로도 완화할 수 없다 — 운영 검증은 사람 게이트다. 이 거부를 만나면 우회하지 말고 사용자에게 보고한다.
@@ -64,7 +71,7 @@ npm run handoff -- --resume           # IMPLEMENTING 복구/REVIEW 보완. 세�
 ## 사람 게이트 (자동화 금지)
 
 - 커밋·push·release는 **사용자 명시 요청 시에만**. 파이프라인은 REVIEW에서 정지한다.
-- 하이리스크(`highRisk:true`)는 designer·reviewer에 Opus 필수(lint 강제) + 핸드오프 전 사람/Opus 게이트.
+- 하이리스크(`highRisk:true`)는 designer에 항상, reviewer에는 READY부터 Opus 필수(lint 강제) + 핸드오프 전 사람/Opus 게이트.
 - 공개 API·DB 스키마·보안 정책·비밀값 변경은 구현 전 사용자 확인.
 - `issue-sync`(외부 쓰기)·`approve-partial`은 사람 실행.
 - 최종 방어선은 커밋 전 사람의 `git diff TASK.md` 검토다.
