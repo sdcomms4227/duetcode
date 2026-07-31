@@ -21,7 +21,7 @@
 - [x] 구 `cc-symphony` archive(§4)
 - [x] 실설치 스모크 테스트 — 당시 `github:sdcomms4227/duetcode#v0.1.1`로 검증했다
 
-> **`gh` 활성 계정 주의.** 이 머신에는 `sdcomms4227`과 `mwlee-showtech`가 함께 로그인되어 있고, 작업 중 **활성 계정이 두 번 후자로 되돌아갔다**(두 번째는 push가 403). remote URL에 사용자를 박아 두었지만(`https://sdcomms4227@github.com/...`), push 전에 `gh auth status`로 확인하는 편이 안전하다.
+> **`gh` 활성 계정 주의.** 이 머신에는 `sdcomms4227`과 `mwlee-showtech`가 함께 로그인되어 있고, 작업 중 **활성 계정이 두 번 후자로 되돌아갔다**(두 번째는 push가 403). **push 전에 `gh auth status`로 활성 계정을 확인한다** — 이것이 유일한 방어선이다. 한때 remote URL에 사용자를 박아 두는 방법을 함께 썼지만 지금 remote는 `https://github.com/sdcomms4227/duetcode.git`로 사용자가 없다. 저장소 밖의 로컬 git 설정이라 어떤 테스트도 이 드리프트를 잡지 못하므로, 여기에 적힌 대비책을 실제 설정으로 착각하지 않는다.
 
 ### 켜지 않기로 한 것
 
