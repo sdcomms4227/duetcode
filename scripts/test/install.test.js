@@ -75,7 +75,9 @@ test('설치된 스크립트는 duet-* 실행 파일을 부르고 경로·glob�
 
 test('--no-handoff는 handoff 스크립트를 넣지 않고, 기존 값도 건드리지 않는다', () => {
 	const target = mkTarget();
-	assert.equal(run(target, ['--no-handoff']).status, 0);
+	const first = run(target, ['--no-handoff']);
+	assert.equal(first.status, 0);
+	assert.match(first.stdout, /handoff 스크립트 생략/, '축소 패키지 설치가 아니라 스크립트 생략임을 알린다');
 	assert.equal(scriptsOf(target).handoff, undefined, 'handoff 스크립트 없음');
 	assert.ok('task' in scriptsOf(target), 'task 스크립트는 설치된다');
 
@@ -267,7 +269,7 @@ test('.duet/ 디렉터리를 만들고 재실행에 멱등이다', () => {
 });
 
 test('설치되는 docs/ 파일명이 고정되어 있다', () => {
-	// 대상 파일명은 공개 계약이다. 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 기존 설치
+	// 대상 파일명은 고정된 설치 산출물이다(semver 공개 표면은 아님). 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 기존 설치
 	// 대상에 구 파일이 남은 채 신 파일이 추가되어 둘이 공존한다(cc-symphony → duetcode 개명 때 실제로
 	// 발생했고, 당시에는 이 단정이 없어 눈으로 확인해야 했다).
 	const target = mkTarget();
@@ -280,6 +282,51 @@ test('설치되는 docs/ 파일명이 고정되어 있다', () => {
 			'duetcode-pipeline-workflow-example.md'
 		], 'docs/에 설치되는 파일 집합이 정확히 이것이어야 한다');
 		assert.deepEqual(INSTALLED_DOCS.map(([, name]) => name).sort(), installed, 'INSTALLED_DOCS와 실제 산출물이 일치해야 한다');
+	} finally {
+		cleanup(target);
+	}
+});
+
+test('설치 문서의 상대 링크는 설치된 파일명을 가리킨다', () => {
+	const target = mkTarget();
+	try {
+		assert.equal(run(target).status, 0);
+		const docsDir = path.join(target, 'docs');
+		const workflow = fs.readFileSync(path.join(docsDir, 'duetcode-pipeline-workflow-example.md'), 'utf8');
+		assert.match(workflow, /\]\(duetcode-pipeline-design\.md#section-9\)/);
+		assert.doesNotMatch(workflow, /\]\(pipeline-design\.md\)/);
+
+		for (const [, installedName] of INSTALLED_DOCS) {
+			const content = fs.readFileSync(path.join(docsDir, installedName), 'utf8');
+			for (const match of content.matchAll(/\]\((?!https?:|mailto:)([^)]+)\)/g)) {
+				const [relativePath, fragment] = match[1].split('#', 2);
+				const targetPath = path.resolve(docsDir, relativePath);
+				assert.ok(
+					fs.existsSync(targetPath),
+					`${installedName}의 링크 대상이 없음: ${relativePath}`
+				);
+				if (fragment) {
+					const targetContent = fs.readFileSync(targetPath, 'utf8');
+					assert.match(
+						targetContent,
+						new RegExp(`<a\\s+id=["']${fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`),
+						`${installedName}의 링크 앵커가 없음: ${match[1]}`
+					);
+				}
+			}
+		}
+	} finally {
+		cleanup(target);
+	}
+});
+
+test('설치 문서는 검증 샘플의 패키지 경로를 안내한다', () => {
+	const target = mkTarget();
+	try {
+		assert.equal(run(target).status, 0);
+		const design = fs.readFileSync(path.join(target, 'docs', 'duetcode-pipeline-design.md'), 'utf8');
+		assert.match(design, /node_modules\/duetcode\/templates\/verify\.example\.json/);
+		assert.doesNotMatch(design, /샘플은 `templates\/verify\.example\.json`/);
 	} finally {
 		cleanup(target);
 	}

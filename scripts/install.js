@@ -8,7 +8,7 @@
  * 엔진 자체는 더 이상 복사하지 않는다 — `duetcode` devDependency로 설치되고 `duet-task`·`duet-handoff`
  * 실행 파일로 호출된다. 그래서 이 스크립트는 "대상 저장소가 소유하는 것"만 만든다.
  * - 기본은 "없으면 생성, 있으면 보존". 기존 사용자 파일을 덮어쓰지 않는다.
- * - --no-handoff: Codex 핸드오프 없이 코어(task 상태머신 + lint + CI)만 구성.
+ * - --no-handoff: 완전한 npm 패키지는 그대로 두고, 대상의 handoff 스크립트만 생략해 코어(task 상태머신 + lint + CI)를 구성.
  * Node 내장 모듈만 사용한다(대상의 npm install 이전에 실행될 수 있으므로).
  */
 const fs = require('node:fs');
@@ -31,7 +31,7 @@ const LEGACY_SCRIPTS = {
 const OBSOLETE_SCRIPTS = ['task:test', 'handoff:test'];
 
 // 대상 저장소 docs/에 설치되는 문서: [배포본 원본(패키지 루트 기준), 대상 파일명].
-// **대상 파일명은 공개 계약이다.** 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 기존 설치
+// **대상 파일명은 고정된 설치 산출물이다(semver 공개 표면은 아님).** 설치기는 사용자 파일을 지우지 않으므로, 이름을 바꾸면 기존 설치
 // 대상에 구 파일이 남은 채 신 파일이 추가되어 둘이 공존한다(cc-symphony → duetcode 개명 때 실제로
 // 발생했다). scripts/test/install.test.js가 이 목록을 고정하고, 이름을 바꾸면 LEGACY_DOCS에
 // 옛 이름을 추가해 잔재가 보고되도록 해야 한다.
@@ -59,6 +59,18 @@ const PACKAGE_SOURCES = [
   'templates/package-json-snippet.json',
   ...INSTALLED_DOCS.map(([source]) => source)
 ];
+
+// 원본 문서는 이 저장소 안에서도 링크가 동작해야 하므로 원본 파일명을 쓴다. 대상 저장소에서는
+// 문서 이름에 duetcode- 접두사가 붙으므로, 복사할 때 설치 파일명으로 링크를 바꿔야 한다.
+// 그렇지 않으면 두 문서가 모두 설치되어도 workflow 예시의 설계 문서 링크가 끊긴다.
+function rewriteInstalledDocLinks(content) {
+  let result = content;
+  for (const [source, installedName] of INSTALLED_DOCS) {
+    const sourceName = path.basename(source);
+    result = result.replaceAll(`](${sourceName}`, `](${installedName}`);
+  }
+  return result;
+}
 
 function parseArgs(argv) {
   const opts = { target: process.cwd(), handoff: true };
@@ -204,7 +216,7 @@ function main() {
     throw new Error(`배포본에 원본이 없습니다: ${missing.join(', ')} (package.json의 files 확인 필요). 대상 저장소는 건드리지 않았습니다.`);
   }
 
-  console.log(`duetcode 부트스트랩 → ${TARGET_ROOT}${opts.handoff ? '' : ' (코어만, 핸드오프 제외)'}\n`);
+  console.log(`duetcode 부트스트랩 → ${TARGET_ROOT}${opts.handoff ? '' : ' (handoff 스크립트 생략)'}\n`);
 
   // 1. package.json — 엔진은 devDependency로 들어오고, 스크립트는 duet-* 실행 파일을 부른다.
   const { conflicts, obsolete } = mergePackageJson(TARGET_ROOT, opts.handoff);
@@ -233,7 +245,11 @@ function main() {
   // package.json의 files에 docs가 빠진 배포본이 문서 2개를 말없이 누락한 채 "완료"로 끝났다
   // (v0.1.0에서 실제 발생). 검사를 없앤 것이 아니라 쓰기 이전으로 옮긴 것이다.
   for (const [source, name] of INSTALLED_DOCS) {
-    ensureFileFromTemplate(path.join(PACKAGE_ROOT, source), path.join(TARGET_ROOT, 'docs', name));
+    ensureFileFromTemplate(
+      path.join(PACKAGE_ROOT, source),
+      path.join(TARGET_ROOT, 'docs', name),
+      rewriteInstalledDocLinks
+    );
   }
   // 개명 이전 파일명이 남아 있으면 신 파일과 공존한다. 지우지 않고 알린다.
   const staleDocs = LEGACY_DOCS.filter(([old]) => fs.existsSync(path.join(TARGET_ROOT, 'docs', old)));
