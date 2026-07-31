@@ -89,7 +89,7 @@ States: `IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE`, plus t
 - `EXIT_CODES`: `SUCCESS` 0, `INTERNAL` 1, `GUARD` 2, `TIMEOUT` 3, `TRANSPORT` 4, `INCOMPLETE` 5 — dispatch's own exit code communicates *why* a run didn't complete, distinct from Codex's exit code. These values are part of the public surface (README "Versioning"); changing one is a breaking change.
 - `acquireLock`/`releaseLock` under `HANDOFF_STATE_DIR` (default `<repo-root>/.duet/state/`, git-ignored) make concurrent dispatch invocations mutually exclusive. The state lives outside the engine on purpose — the engine is a dependency that gets reinstalled, and state must survive that.
 - `--resume` reuses a recorded `thread_id` from session state — for continuing a REVIEW round or recovering from an IMPLEMENTING crash without losing Codex conversation context.
-- `--high-risk-approved` is the CLI-side acknowledgment of the `highRisk` gate before a risky task is allowed to dispatch; `--timeout-min N` caps the whole Codex run (default 30, `DEFAULT_TIMEOUT_MINUTES`).
+- `--high-risk-approved` is the CLI-side acknowledgment of the `highRisk` gate before a risky task is allowed to dispatch; `--timeout-min N` caps the whole Codex run (default 30, `DEFAULT_TIMEOUT_MINUTES` — this one lives in `dispatch.js`, not `lib.js`).
 - `redactText` / `sanitizeFile` exist because Codex output and prompts get logged to `HANDOFF_STATE_DIR` — secrets must not leak into that state.
 
 `build-prompt.js` assembles what Codex actually receives from `TASK.md`'s current state; `parse-result.js` (`ResultParser`) interprets Codex's structured response back into a status/outcome dispatch.js can act on.

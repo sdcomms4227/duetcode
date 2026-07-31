@@ -25,7 +25,7 @@ npm run task -- start production-year-filter --objective "검색에 생산연도
 
 ## 2. Claude 분석·설계
 
-Claude는 코드와 필독 문서를 조사하고 `TASK.md` 본문(요구사항·완료 조건, 필독 문서·불변식, 영향 범위, 확정된 설계·미확정, 검증 방법·허용하지 않는 회귀)을 채운 뒤 역할·checkpoint를 설정하고 READY로 전환한다.
+Claude는 코드와 필독 문서를 조사하고 `TASK.md` 본문에서 READY가 요구하는 네 섹션(`요구사항과 완료 조건`, `필독 문서와 불변식`, `영향 범위`, `확정된 설계와 미확정 사항`)을 채운 뒤 역할·checkpoint를 설정하고 READY로 전환한다.
 
 ```bash
 npm run task -- set roles.implementer=gpt-5.6-sol
@@ -89,11 +89,13 @@ npm run task -- set status=READY --design-checkpoint <새-SHA>
 다음 두 기록은 실제 검증 결과에 따라 하나만 선택한다.
 
 ```bash
-npm run task -- record-verification --status PASSED --failed-count 0
+npm run task -- record-verification --status PASSED --failed-count 0 --evidence "npm test"
 
 # 또는 환경 제약으로 일부 미실행 시 (사유를 TASK.md에 기록)
-npm run task -- record-verification --status PARTIAL --failed-count 0
+npm run task -- record-verification --status PARTIAL --failed-count 0 --evidence "npm test"
 ```
+
+`--evidence "<명령>"`은 그 명령을 실제로 실행해 exit code와 출력 해시를 남긴다. 없이 기록하면 "테스트를 돌렸다"는 자기 신고에 지나지 않는다. 증거의 exit code가 0이 아닌데 `PASSED`로 기록하면 lint가 거부한다.
 
 PARTIAL로 완료하려면 사용자가 실제 터미널에서 승인한다.
 

@@ -51,13 +51,16 @@ TASK.md의 `Active Task`는 동시에 하나만 유지한다. 최상단 YAML fro
 
 ```text
 IDLE → DESIGN → READY → IMPLEMENTING → REVIEW → DONE
-                         ↑             │
-                   READY/IMPLEMENTING ←┘
+                  ↑           ↑          ││
+            READY ←───────────┘          ││ REVIEW→IMPLEMENTING (구현 보완)
+                  └───────────────────────┘ REVIEW→READY (설계 변경)
 
 진행 불가: BLOCKED
 사용자 취소: CANCELLED
 대안 Task로 대체: SUPERSEDED
 ```
+
+두 루프백 모두 기존 `verification`을 초기화한다 — 이전 `PASSED`를 재사용해 무검증으로 `DONE`에 가는 경로를 막는다. `REVIEW→READY`는 설계가 바뀐 것이므로 `--design-checkpoint` 재입력을 강제한다.
 
 - `READY`: 요구사항·영향 범위·완료 조건·필독 문서·불변식이 명확한 상태.
 - `IMPLEMENTING`: Codex가 구현을 진행하는 상태.
